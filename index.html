@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Algebra Calculator</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>∑</text></svg>" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
       --bg:       #0d0d1a;
       --surface:  #13131f;
@@ -22,183 +22,195 @@
       --red:      #ff6b8a;
       --gold:     #e8c36a;
     }
-
     body {
-      background: var(--bg);
-      color: var(--text);
+      background: var(--bg); color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+      min-height: 100vh; display: flex; flex-direction: column;
     }
 
+    /* ── Header ── */
     header {
-      background: linear-gradient(135deg, #1a1a2e 0%, #0f0f28 100%);
+      background: linear-gradient(135deg, #1a1a2e, #0f0f28);
       border-bottom: 1px solid var(--border);
-      padding: 14px 28px;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      position: sticky;
-      top: 0;
-      z-index: 10;
+      padding: 14px 28px; display: flex; align-items: center; gap: 14px;
+      position: sticky; top: 0; z-index: 10;
     }
     .logo {
       width: 42px; height: 42px;
       background: linear-gradient(135deg, var(--accent), var(--accent-l));
-      border-radius: 11px;
-      display: flex; align-items: center; justify-content: center;
+      border-radius: 11px; display: flex; align-items: center; justify-content: center;
       font-size: 1.5rem; font-weight: 900; flex-shrink: 0;
     }
-    header h1 { font-size: 1.25rem; font-weight: 700; line-height: 1.2; }
+    header h1 { font-size: 1.25rem; font-weight: 700; }
     header p  { font-size: 0.75rem; color: var(--dim); margin-top: 1px; }
     .header-right { margin-left: auto; display: flex; gap: 8px; }
-
     .btn {
-      background: var(--card);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 6px 14px;
-      border-radius: 7px;
-      cursor: pointer;
-      font-size: 0.82rem;
-      transition: background 0.15s, border-color 0.15s;
-      white-space: nowrap;
+      background: var(--card); border: 1px solid var(--border);
+      color: var(--text); padding: 6px 14px; border-radius: 7px;
+      cursor: pointer; font-size: 0.82rem;
+      transition: background 0.15s, border-color 0.15s; white-space: nowrap;
     }
     .btn:hover { background: var(--accent); border-color: var(--accent); }
 
+    /* ── Layout ── */
     main { max-width: 920px; width: 100%; margin: 28px auto; padding: 0 18px 60px; }
 
+    /* ── Calculator card ── */
     .calc-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      overflow: hidden;
-      box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; overflow: hidden;
+      box-shadow: 0 8px 40px rgba(0,0,0,.4);
     }
     .calc-titlebar {
-      background: var(--card);
-      padding: 9px 16px;
+      background: var(--card); padding: 9px 16px;
       display: flex; align-items: center; gap: 6px;
       border-bottom: 1px solid var(--border);
     }
     .dot { width: 11px; height: 11px; border-radius: 50%; }
-    .dot-r { background: #ff5f57; }
-    .dot-y { background: #febc2e; }
-    .dot-g { background: #28c840; }
-    .calc-fname { margin-left: auto; font-size: 0.72rem; color: var(--dim); font-family: monospace; }
+    .dot-r{background:#ff5f57} .dot-y{background:#febc2e} .dot-g{background:#28c840}
+    .calc-fname { margin-left: auto; font-size: .72rem; color: var(--dim); font-family: monospace; }
 
-    .lines { padding: 10px 12px 6px; }
-
+    /* ── Lines ── */
+    .lines { padding: 10px 12px 4px; }
     .line {
       display: flex; align-items: center; gap: 8px;
-      min-height: 44px; padding: 4px 10px;
+      min-height: 46px; padding: 4px 10px;
       border-radius: 8px; border: 1px solid transparent;
-      margin-bottom: 3px;
-      transition: border-color 0.12s, background 0.12s;
+      margin-bottom: 3px; transition: border-color .12s, background .12s;
     }
     .line:focus-within { background: rgba(124,92,191,.07); border-color: var(--accent); }
-    .line.is-error    { border-color: rgba(255,107,138,.4); }
-    .line.is-result   { border-color: rgba(79,195,161,.2); }
-    .line.is-comment  { opacity: .5; }
+    .line.is-error   { border-color: rgba(255,107,138,.4); }
+    .line.is-result  { border-color: rgba(79,195,161,.2); }
+    .line.is-comment { opacity: .5; }
 
-    .lnum {
-      font-size: 0.72rem; color: var(--dim);
-      font-family: 'Consolas', monospace;
-      min-width: 22px; text-align: right;
-      user-select: none; flex-shrink: 0;
-    }
+    .lnum { font-size:.72rem; color:var(--dim); font-family:'Consolas',monospace; min-width:22px; text-align:right; user-select:none; flex-shrink:0; }
+
+    /* Input column: text input + live preview below it */
+    .linput-col { flex:1; min-width:0; display:flex; flex-direction:column; justify-content:center; }
     .linput {
-      flex: 1; min-width: 0;
-      background: none; border: none; outline: none;
-      color: var(--text);
-      font-size: 0.97rem;
-      font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+      width: 100%; background: none; border: none; outline: none;
+      color: var(--text); font-size:.97rem;
+      font-family:'Cascadia Code','Consolas','Courier New',monospace;
       caret-color: var(--accent-l);
     }
     .linput::placeholder { color: var(--dim); }
 
-    .larrow { color: var(--dim); font-size: 0.85rem; flex-shrink: 0; min-width: 14px; }
+    /* Live KaTeX preview of the input expression */
+    .math-preview {
+      display: none; font-size: .82rem; padding: 1px 0; color: var(--dim);
+      overflow-x: auto; white-space: nowrap;
+    }
+    .math-preview.show { display: block; }
+    .math-preview .katex { color: var(--dim); }
 
+    .larrow { color: var(--dim); font-size:.85rem; flex-shrink:0; min-width:14px; }
+
+    /* Result — rendered via KaTeX */
     .lresult {
-      font-size: 0.93rem;
-      font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
-      text-align: right; max-width: 300px;
-      word-break: break-word; flex-shrink: 0;
+      text-align: right; max-width: 320px; flex-shrink: 0;
+      font-size: .93rem; word-break: break-word;
+      font-family: 'Cascadia Code','Consolas','Courier New',monospace;
     }
     .lresult.num  { color: var(--blue); }
     .lresult.sym  { color: var(--gold); }
     .lresult.ok   { color: var(--green); }
-    .lresult.err  { color: var(--red); font-size: 0.78rem; }
+    .lresult.err  { color: var(--red); font-size:.78rem; }
+    .lresult .katex { font-size: 1rem; }
 
     .ldel {
-      background: none; border: none; cursor: pointer;
-      color: transparent; font-size: 0.82rem;
-      padding: 2px 5px; border-radius: 4px;
-      transition: color 0.12s; flex-shrink: 0;
+      background:none; border:none; cursor:pointer; color:transparent;
+      font-size:.82rem; padding:2px 5px; border-radius:4px;
+      transition:color .12s; flex-shrink:0;
     }
-    .line:hover .ldel, .line:focus-within .ldel { color: var(--dim); }
-    .ldel:hover { color: var(--red) !important; }
+    .line:hover .ldel, .line:focus-within .ldel { color:var(--dim); }
+    .ldel:hover { color:var(--red)!important; }
 
     .add-line {
-      width: 100%; background: none;
-      border: 1.5px dashed var(--border);
-      color: var(--dim); padding: 9px 12px;
-      border-radius: 8px; cursor: pointer; font-size: 0.83rem;
-      margin: 3px 0 12px;
-      transition: border-color 0.15s, color 0.15s, background 0.15s;
-      display: flex; align-items: center; justify-content: center; gap: 6px;
+      width:100%; background:none; border:1.5px dashed var(--border);
+      color:var(--dim); padding:9px 12px; border-radius:8px;
+      cursor:pointer; font-size:.83rem; margin:3px 0 12px;
+      transition:border-color .15s,color .15s,background .15s;
+      display:flex; align-items:center; justify-content:center; gap:6px;
     }
-    .add-line:hover { border-color: var(--accent); color: var(--accent-l); background: rgba(124,92,191,.05); }
+    .add-line:hover { border-color:var(--accent); color:var(--accent-l); background:rgba(124,92,191,.05); }
 
     .status {
-      padding: 8px 16px; background: var(--card);
-      border-top: 1px solid var(--border);
-      display: flex; gap: 20px; flex-wrap: wrap;
-      font-size: 0.72rem; color: var(--dim);
+      padding:8px 16px; background:var(--card); border-top:1px solid var(--border);
+      display:flex; gap:20px; flex-wrap:wrap; font-size:.72rem; color:var(--dim);
     }
-    .status b { color: var(--text); font-weight: 600; }
+    .status b { color:var(--text); font-weight:600; }
 
+    /* ── Virtual Keyboard ── */
+    .keyboard-wrap {
+      margin-top: 16px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+    }
+    .keyboard-hdr {
+      background: var(--card); padding: 10px 18px; cursor: pointer;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: .86rem; font-weight: 600; user-select: none;
+      border-bottom: 1px solid var(--border);
+    }
+    .keyboard-hdr:hover { background: #1f1f38; }
+
+    .keyboard-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+
+    .kb-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    .kb-sep {
+      width: 1px; background: var(--border); margin: 0 4px; flex-shrink: 0;
+    }
+
+    .kb {
+      background: var(--card); border: 1px solid var(--border);
+      color: var(--text); border-radius: 7px; cursor: pointer;
+      font-size: .85rem; padding: 7px 0; min-width: 44px; text-align: center;
+      transition: background .12s, border-color .12s; flex-shrink: 0;
+      font-family: 'Cascadia Code','Consolas',monospace; user-select: none;
+    }
+    .kb:hover  { background: var(--accent); border-color: var(--accent); }
+    .kb:active { filter: brightness(1.2); }
+    .kb.wide  { min-width: 72px; }
+    .kb.fn    { color: var(--accent-l); }
+    .kb.del   { color: var(--red); }
+    .kb.num   { color: var(--blue); }
+    .kb.letter{ color: var(--green); }
+    .kb.op    { color: var(--gold); }
+
+    /* KaTeX inside keys */
+    .kb .katex { font-size: .85rem; }
+
+    /* ── Reference panel ── */
     .ref {
-      margin-top: 20px; background: var(--surface);
+      margin-top: 16px; background: var(--surface);
       border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
     }
     .ref-hdr {
       background: var(--card); padding: 11px 18px; cursor: pointer;
       display: flex; justify-content: space-between; align-items: center;
-      font-size: 0.86rem; font-weight: 600; user-select: none;
+      font-size: .86rem; font-weight: 600; user-select: none;
       border-bottom: 1px solid var(--border);
     }
     .ref-hdr:hover { background: #1f1f38; }
-    .ref-body {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
-    }
+    .ref-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
     .ref-cat { padding: 14px 18px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
     .ref-cat:last-child { border-right: none; }
-    .ref-cat h3 { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.9px; color: var(--accent-l); margin-bottom: 9px; }
+    .ref-cat h3 { font-size:.65rem; text-transform:uppercase; letter-spacing:.9px; color:var(--accent-l); margin-bottom:9px; }
     .ex {
-      display: block; background: var(--bg); border-radius: 5px;
-      padding: 4px 8px; font-size: 0.8rem;
-      font-family: 'Cascadia Code', 'Consolas', monospace;
-      color: var(--green); margin-bottom: 5px; cursor: pointer;
-      transition: background 0.1s; user-select: none;
+      display:block; background:var(--bg); border-radius:5px;
+      padding:4px 8px; font-size:.8rem;
+      font-family:'Cascadia Code','Consolas',monospace;
+      color:var(--green); margin-bottom:5px; cursor:pointer;
+      transition:background .1s; user-select:none;
     }
-    .ex:hover { background: rgba(79,195,161,.12); }
+    .ex:hover { background:rgba(79,195,161,.12); }
 
     #toast {
-      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-      background: var(--accent); color: #fff;
-      padding: 8px 20px; border-radius: 8px;
-      font-size: 0.85rem; opacity: 0;
-      transition: opacity 0.3s; pointer-events: none; z-index: 100;
+      position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+      background:var(--accent); color:#fff; padding:8px 20px; border-radius:8px;
+      font-size:.85rem; opacity:0; transition:opacity .3s; pointer-events:none; z-index:100;
     }
-    #toast.show { opacity: 1; }
-
-    @media (max-width: 600px) {
-      .ref-body { grid-template-columns: 1fr 1fr; }
-      .lresult  { max-width: 140px; }
-    }
+    #toast.show { opacity:1; }
   </style>
 </head>
 <body>
@@ -218,9 +230,7 @@
 <main>
   <div class="calc-card">
     <div class="calc-titlebar">
-      <div class="dot dot-r"></div>
-      <div class="dot dot-y"></div>
-      <div class="dot dot-g"></div>
+      <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
       <span class="calc-fname">notebook.alg</span>
     </div>
     <div class="lines" id="lines"></div>
@@ -230,9 +240,84 @@
     </div>
   </div>
 
+  <!-- ── Virtual Keyboard ── -->
+  <div class="keyboard-wrap">
+    <div class="keyboard-hdr" onclick="toggleKb(this)">
+      ⌨️ Keyboard — click a button, then type in any line <span>▼</span>
+    </div>
+    <div class="keyboard-body" id="kbBody">
+
+      <!-- Row 1: Trig + common functions -->
+      <div class="kb-row">
+        <button class="kb fn" onclick="kbFn('sin(',')')">sin</button>
+        <button class="kb fn" onclick="kbFn('cos(',')')">cos</button>
+        <button class="kb fn" onclick="kbFn('tan(',')')">tan</button>
+        <button class="kb fn" onclick="kbFn('asin(',')')">sin⁻¹</button>
+        <button class="kb fn" onclick="kbFn('acos(',')')">cos⁻¹</button>
+        <button class="kb fn" onclick="kbFn('atan(',')')">tan⁻¹</button>
+        <div class="kb-sep"></div>
+        <button class="kb fn" onclick="kbFn('log(',')')">log</button>
+        <button class="kb fn" onclick="kbFn('log(','e)')">ln</button>
+        <button class="kb fn" onclick="kbFn('sqrt(',')')">√</button>
+        <button class="kb fn" onclick="kbFn('abs(',')')">|x|</button>
+        <button class="kb fn" onclick="kbFn('factorial(',')')">n!</button>
+        <div class="kb-sep"></div>
+        <button class="kb del" onclick="kbDelete()">⌫</button>
+      </div>
+
+      <!-- Row 2: Symbols + letters -->
+      <div class="kb-row">
+        <button class="kb op" onclick="kbInsert('pi')">π</button>
+        <button class="kb op" onclick="kbInsert('e')">e</button>
+        <button class="kb op" onclick="kbInsert('^')">^</button>
+        <button class="kb op" onclick="kbInsert('^2')">x²</button>
+        <button class="kb op" onclick="kbInsert('^3')">x³</button>
+        <button class="kb op" onclick="kbInsert('(1/',')')">1/x</button>
+        <div class="kb-sep"></div>
+        <button class="kb op" onclick="kbInsert('(')"> ( </button>
+        <button class="kb op" onclick="kbInsert(')')"> ) </button>
+        <button class="kb op" onclick="kbInsert('=')">=</button>
+        <div class="kb-sep"></div>
+        <button class="kb letter" onclick="kbInsert('x')">x</button>
+        <button class="kb letter" onclick="kbInsert('y')">y</button>
+        <button class="kb letter" onclick="kbInsert('z')">z</button>
+        <button class="kb letter" onclick="kbInsert('a')">a</button>
+        <button class="kb letter" onclick="kbInsert('b')">b</button>
+        <button class="kb letter" onclick="kbInsert('n')">n</button>
+        <button class="kb letter" onclick="kbInsert('t')">t</button>
+        <button class="kb letter" onclick="kbInsert('k')">k</button>
+      </div>
+
+      <!-- Row 3: Numbers + operators -->
+      <div class="kb-row">
+        <button class="kb num" onclick="kbInsert('7')">7</button>
+        <button class="kb num" onclick="kbInsert('8')">8</button>
+        <button class="kb num" onclick="kbInsert('9')">9</button>
+        <div class="kb-sep"></div>
+        <button class="kb op" onclick="kbInsert('+')">+</button>
+        <button class="kb op" onclick="kbInsert('-')">−</button>
+        <button class="kb op" onclick="kbInsert('*')">×</button>
+        <button class="kb op" onclick="kbInsert('/')">÷</button>
+        <div class="kb-sep"></div>
+        <button class="kb num" onclick="kbInsert('4')">4</button>
+        <button class="kb num" onclick="kbInsert('5')">5</button>
+        <button class="kb num" onclick="kbInsert('6')">6</button>
+        <div class="kb-sep"></div>
+        <button class="kb num" onclick="kbInsert('1')">1</button>
+        <button class="kb num" onclick="kbInsert('2')">2</button>
+        <button class="kb num" onclick="kbInsert('3')">3</button>
+        <div class="kb-sep"></div>
+        <button class="kb num" onclick="kbInsert('0')">0</button>
+        <button class="kb op" onclick="kbInsert('.')"> . </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Reference panel ── -->
   <div class="ref">
     <div class="ref-hdr" onclick="toggleRef(this)">
-      📖 Quick Reference — click any example to insert &nbsp;<span>▼</span>
+      📖 Quick Reference — click to insert &nbsp;<span>▼</span>
     </div>
     <div class="ref-body" id="refBody">
       <div class="ref-cat">
@@ -282,21 +367,21 @@
 
 <div id="toast"></div>
 
-<!-- nerdamer: symbolic CAS (equation solving, factoring, calculus) -->
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/nerdamer.core.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Algebra.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Calculus.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Solve.js"></script>
-<!-- math.js: numeric fallback (trig, log, factorial, units) -->
 <script src="https://cdn.jsdelivr.net/npm/mathjs@13/lib/browser/math.min.js"></script>
 
 <script>
 /* ============================================================
-   State — rebuilt from scratch on every evaluateAll() pass
+   Globals
 ============================================================ */
-let numScope  = {};      // math.js variable values  { x: 5, r: 7, … }
-let varNames  = new Set(); // names that have been assigned so far
-let lastFocus = null;    // last focused .line element
+let numScope  = {};
+let varNames  = new Set();
+let lastFocus = null;    // last focused .line div
+let activeInput = null;  // last focused text input (for keyboard)
 
 /* ============================================================
    Boot
@@ -318,24 +403,29 @@ function addLine(value = '', doFocus = true) {
   div.className = 'line';
   div.innerHTML = `
     <span class="lnum">?</span>
-    <input class="linput" type="text" autocomplete="off" autocorrect="off"
-           spellcheck="false" placeholder="expression or equation…" />
+    <div class="linput-col">
+      <input class="linput" type="text" autocomplete="off" autocorrect="off"
+             spellcheck="false" placeholder="expression or equation…" />
+      <div class="math-preview"></div>
+    </div>
     <span class="larrow"></span>
-    <span class="lresult"></span>
+    <div class="lresult"></div>
     <button class="ldel" tabindex="-1" title="Remove">✕</button>`;
   container.appendChild(div);
 
-  const newAddBtn = document.createElement('button');
-  newAddBtn.className = 'add-line';
-  newAddBtn.innerHTML = '＋ &nbsp;Add line';
-  newAddBtn.onclick = () => addLine();
-  container.appendChild(newAddBtn);
+  const btn = document.createElement('button');
+  btn.className = 'add-line';
+  btn.innerHTML = '＋ &nbsp;Add line';
+  btn.onclick = () => addLine();
+  container.appendChild(btn);
 
   const input = div.querySelector('.linput');
   if (value) input.value = value;
-  input.addEventListener('input',   evaluateAll);
+
+  input.addEventListener('input',   () => { evaluateAll(); });
   input.addEventListener('keydown', onKeydown);
-  input.addEventListener('focus',   () => { lastFocus = div; });
+  input.addEventListener('focus',   () => { lastFocus = div; activeInput = input; });
+
   div.querySelector('.ldel').addEventListener('click', () => deleteLine(div));
 
   renumber(); evaluateAll(); updateStatus();
@@ -387,7 +477,7 @@ function loadExamples() {
 }
 
 /* ============================================================
-   Keyboard navigation
+   Keyboard nav
 ============================================================ */
 function onKeydown(e) {
   const input = e.target;
@@ -413,39 +503,94 @@ function onKeydown(e) {
 }
 
 /* ============================================================
-   Evaluation — rebuild scope from top to bottom every time
+   Virtual keyboard helpers
+============================================================ */
+function kbInsert(text, moveCursorLeft = 0) {
+  const inp = activeInput;
+  if (!inp) return;
+  const s = inp.selectionStart ?? inp.value.length;
+  const e = inp.selectionEnd   ?? inp.value.length;
+  inp.value = inp.value.slice(0, s) + text + inp.value.slice(e);
+  const pos = s + text.length - moveCursorLeft;
+  inp.setSelectionRange(pos, pos);
+  inp.focus();
+  inp.dispatchEvent(new Event('input'));
+}
+
+/* Insert a function call: prefix + cursor + suffix  e.g. sin( | ) */
+function kbFn(prefix, suffix) {
+  kbInsert(prefix + suffix, suffix.length);
+}
+
+function kbDelete() {
+  const inp = activeInput;
+  if (!inp) return;
+  const s = inp.selectionStart;
+  const e = inp.selectionEnd;
+  if (s === e && s > 0) {
+    inp.value = inp.value.slice(0, s - 1) + inp.value.slice(e);
+    inp.setSelectionRange(s - 1, s - 1);
+  } else if (s !== e) {
+    inp.value = inp.value.slice(0, s) + inp.value.slice(e);
+    inp.setSelectionRange(s, s);
+  }
+  inp.focus();
+  inp.dispatchEvent(new Event('input'));
+}
+
+/* ============================================================
+   Evaluate all lines — full reset each pass
 ============================================================ */
 function evaluateAll() {
-  // Full reset so every pass is deterministic
   nerdamer.clearVars();
   numScope = {};
   varNames = new Set();
 
   allLines().forEach(line => {
-    const input  = line.querySelector('.linput');
-    const arrow  = line.querySelector('.larrow');
-    const result = line.querySelector('.lresult');
-    const raw    = input.value.trim();
+    const input   = line.querySelector('.linput');
+    const preview = line.querySelector('.math-preview');
+    const arrow   = line.querySelector('.larrow');
+    const result  = line.querySelector('.lresult');
+    const raw     = input.value.trim();
 
     line.className     = 'line';
     arrow.textContent  = '';
     result.textContent = '';
     result.className   = 'lresult';
+    preview.className  = 'math-preview';
+    preview.innerHTML  = '';
 
     if (!raw) return;
 
+    // Comments
     if (raw.startsWith('#') || raw.startsWith('//')) {
-      line.classList.add('is-comment');
-      return;
+      line.classList.add('is-comment'); return;
     }
 
+    // Live input preview (KaTeX rendering of what you're typing)
+    const previewTex = inputToTeX(raw);
+    if (previewTex) {
+      try {
+        preview.innerHTML = katex.renderToString(previewTex, { throwOnError: false, displayMode: false });
+        preview.classList.add('show');
+      } catch (_) {}
+    }
+
+    // Evaluate
     try {
-      const { text, cls } = evalLine(raw);
+      const { tex, text, cls } = evalLine(raw);
       if (text !== null && text !== undefined) {
-        arrow.textContent  = '→';
-        result.textContent = text;
+        arrow.textContent = '→';
         if (cls) result.classList.add(cls);
         line.classList.add(cls === 'err' ? 'is-error' : 'is-result');
+
+        if (tex && cls !== 'err') {
+          try {
+            result.innerHTML = katex.renderToString(tex, { throwOnError: false, displayMode: false });
+          } catch (_) { result.textContent = text; }
+        } else {
+          result.textContent = text;
+        }
       }
     } catch (err) {
       arrow.textContent  = '→';
@@ -457,62 +602,68 @@ function evaluateAll() {
 }
 
 /* ============================================================
-   Single-line evaluator  →  { text, cls }
-   cls: 'num' | 'sym' | 'ok' | 'err' | null
+   Convert raw input to LaTeX for the live preview
+============================================================ */
+function inputToTeX(raw) {
+  if (!raw || raw.startsWith('#') || raw.startsWith('//')) return null;
+  // Skip command strings — they don't parse nicely
+  if (/^(derivative|diff|integrate|simplify|expand|factor)\s*\(/i.test(raw)) return null;
+
+  try {
+    const eqM = raw.match(/(?<![=!<>])=(?!=)/);
+    if (eqM) {
+      const lhsTex = math.parse(preprocess(raw.slice(0, eqM.index).trim())).toTex();
+      const rhsTex = math.parse(preprocess(raw.slice(eqM.index + 1).trim())).toTex();
+      return `${lhsTex} = ${rhsTex}`;
+    }
+    return math.parse(preprocess(raw)).toTex();
+  } catch { return null; }
+}
+
+/* ============================================================
+   Core evaluator
 ============================================================ */
 function evalLine(raw) {
-  // ── Symbolic commands ──────────────────────────────────────
   if (/^(diff|derivative)\s*\(/i.test(raw))  return cmdDerivative(raw);
   if (/^integrat[e]?\s*\(/i.test(raw))       return cmdIntegral(raw);
   if (/^simplify\s*\(/i.test(raw))           return cmdSimplify(raw);
   if (/^expand\s*\(/i.test(raw))             return cmdExpand(raw);
   if (/^factor\s*\(/i.test(raw))             return cmdFactor(raw);
 
-  // ── Assignment:  name = expr  (no prior = on the left) ────
   const asgn = raw.match(/^([a-zA-Z_]\w*)\s*=(?!=)\s*(.+)$/);
   if (asgn) return handleAssignment(asgn[1], asgn[2].trim());
 
-  // ── Equation:  expr = expr  (contains unknowns) ───────────
   if (/(?<![=!<>])=(?!=)/.test(raw)) return handleEquation(raw);
 
-  // ── Regular expression ─────────────────────────────────────
   return handleExpression(raw);
 }
 
 /* ============================================================
-   Assignment:  x = 5  or  area = pi * r^2
+   Assignment
 ============================================================ */
 function handleAssignment(name, rhs) {
-  // Try math.js first (handles factorial, trig, known vars)
   try {
     const val = math.evaluate(rhs, numScope);
     if (typeof val === 'number' && isFinite(val)) {
-      numScope[name] = val;
-      varNames.add(name);
+      numScope[name] = val; varNames.add(name);
       nerdamer.setVar(name, String(val));
-      return { text: fmtNum(val), cls: 'num' };
+      const tex = fmtNumTeX(val);
+      return { tex, text: fmtNum(val), cls: 'num' };
     }
-    // Non-numeric math.js result (matrix, unit, etc.)
     const text = fmtMathResult(val);
-    numScope[name] = val;
-    varNames.add(name);
-    return { text, cls: null };
-  } catch (_) { /* fall through to nerdamer */ }
+    numScope[name] = val; varNames.add(name);
+    return { tex: null, text, cls: null };
+  } catch (_) {}
 
-  // Try nerdamer (symbolic RHS)
   try {
-    const sym = nerdamer(rhs);
-    const str = sym.toString();
-    nerdamer.setVar(name, str);
-    varNames.add(name);
-    return { text: str, cls: 'sym' };
-  } catch (e) {
-    throw new Error(`Cannot evaluate: ${rhs}`);
-  }
+    const sym = nerdamer(rhs); const str = sym.toString();
+    nerdamer.setVar(name, str); varNames.add(name);
+    return { tex: tryTeX(sym), text: str, cls: 'sym' };
+  } catch (e) { throw new Error(`Cannot evaluate: ${rhs}`); }
 }
 
 /* ============================================================
-   Equation solving  →  exact symbolic answers via nerdamer
+   Equation solving
 ============================================================ */
 function handleEquation(raw) {
   const eqM = raw.match(/(?<![=!<>])=(?!=)/);
@@ -520,55 +671,119 @@ function handleEquation(raw) {
 
   const lhs = raw.slice(0, eqM.index).trim();
   const rhs = raw.slice(eqM.index + 1).trim();
-
   const unknowns = findUnknowns(raw);
 
-  // No unknowns → verify both sides
   if (unknowns.length === 0) {
     try {
-      const l = math.evaluate(lhs, numScope);
-      const r = math.evaluate(rhs, numScope);
+      const l = math.evaluate(lhs, numScope), r = math.evaluate(rhs, numScope);
       const equal = typeof l === 'number' && typeof r === 'number'
-                    ? Math.abs(l - r) < 1e-9
-                    : String(l) === String(r);
-      return { text: equal ? '✓  True' : '✗  False', cls: equal ? 'ok' : null };
-    } catch {
-      return { text: 'Cannot verify', cls: 'err' };
-    }
+                    ? Math.abs(l - r) < 1e-9 : String(l) === String(r);
+      return { tex: null, text: equal ? '✓  True' : '✗  False', cls: equal ? 'ok' : null };
+    } catch { return { tex: null, text: 'Cannot verify', cls: 'err' }; }
   }
 
-  if (unknowns.length > 1) {
-    return { text: `${unknowns.length} unknowns (${unknowns.join(', ')}) — can't solve`, cls: 'err' };
-  }
+  if (unknowns.length > 1)
+    return { tex: null, text: `${unknowns.length} unknowns (${unknowns.join(', ')})`, cls: 'err' };
 
   const v = unknowns[0];
 
-  // Build  lhs − rhs = 0  and pass to nerdamer.solve
   try {
-    const expr = `(${lhs})-(${rhs})`;
-    const sols = nerdamer.solve(expr, v);
+    const sols  = nerdamer.solve(`(${lhs})-(${rhs})`, v);
     const parts = splitSolutions(sols.toString());
-    if (parts.length === 0) return { text: 'No real solution', cls: null };
-    return { text: parts.map(s => `${v} = ${s}`).join('   or   '), cls: 'num' };
+    if (parts.length === 0) return { tex: null, text: 'No solution', cls: null };
+
+    const texParts  = parts.map(p => `${v} = ${solToTeX(p)}`);
+    const textParts = parts.map(p => `${v} = ${p}`);
+    return {
+      tex:  texParts.join(' \\quad\\text{or}\\quad '),
+      text: textParts.join('   or   '),
+      cls:  'num',
+    };
   } catch (_) {
-    // nerdamer can't solve it → numeric fallback
     return numericFallback(lhs, rhs, v);
   }
 }
 
 /* ============================================================
-   Numeric fallback (Newton's method) for equations nerdamer can't crack
+   General expression
+============================================================ */
+function handleExpression(raw) {
+  let mathErr;
+  try {
+    const val = math.evaluate(raw, numScope);
+    if (val !== undefined) {
+      if (typeof val === 'number' && isFinite(val)) {
+        return { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
+      }
+      return { tex: null, text: fmtMathResult(val), cls: null };
+    }
+  } catch (e) { mathErr = e; }
+
+  try {
+    const sym = nerdamer(raw);
+    const str = sym.toString();
+    if (str && str !== raw) return { tex: tryTeX(sym), text: str, cls: 'sym' };
+  } catch (_) {}
+
+  throw mathErr || new Error('Cannot evaluate');
+}
+
+/* ============================================================
+   Commands (all return {tex, text, cls})
+============================================================ */
+function cmdDerivative(raw) {
+  const m = raw.match(/^(?:diff|derivative)\s*\(\s*["']?([^"',]+?)["']?\s*,\s*["']?([a-zA-Z_]\w*)["']?(?:\s*,\s*(\d+))?\s*\)/i);
+  if (!m) throw new Error('Usage: derivative("f(x)", "x")');
+  let r = nerdamer.diff(m[1].trim(), m[2].trim());
+  const ord = m[3] ? parseInt(m[3]) : 1;
+  for (let i = 1; i < ord; i++) r = nerdamer.diff(r.toString(), m[2].trim());
+  const sym = nerdamer(r.toString()).simplify();
+  return { tex: tryTeX(sym), text: sym.toString(), cls: 'sym' };
+}
+
+function cmdIntegral(raw) {
+  const m = raw.match(/^integrat[e]?\s*\(\s*["']?([^"',]+?)["']?\s*,\s*["']?([a-zA-Z_]\w*)["']?\s*\)/i);
+  if (!m) throw new Error('Usage: integrate("f(x)", "x")');
+  const sym = nerdamer.integrate(m[1].trim(), m[2].trim());
+  const tex = tryTeX(sym);
+  return {
+    tex:  tex ? tex + ' + C' : null,
+    text: sym.toString() + ' + C',
+    cls:  'sym',
+  };
+}
+
+function cmdSimplify(raw) {
+  const m = raw.match(/^simplify\s*\(\s*["']?(.*?)["']?\s*\)$/i);
+  if (!m) throw new Error('Usage: simplify("expression")');
+  const sym = nerdamer(m[1].trim()).simplify();
+  return { tex: tryTeX(sym), text: sym.toString(), cls: 'sym' };
+}
+
+function cmdExpand(raw) {
+  const m = raw.match(/^expand\s*\(\s*["']?(.*?)["']?\s*\)$/i);
+  if (!m) throw new Error('Usage: expand("expression")');
+  const sym = nerdamer.expand(m[1].trim());
+  return { tex: tryTeX(sym), text: sym.toString(), cls: 'sym' };
+}
+
+function cmdFactor(raw) {
+  const m = raw.match(/^factor\s*\(\s*["']?(.*?)["']?\s*\)$/i);
+  if (!m) throw new Error('Usage: factor("expression")');
+  const sym = nerdamer.factor(m[1].trim());
+  return { tex: tryTeX(sym), text: sym.toString(), cls: 'sym' };
+}
+
+/* ============================================================
+   Numeric fallback solver
 ============================================================ */
 function numericFallback(lhs, rhs, v) {
   const f = x => {
     const s = { ...numScope, [v]: x };
-    try { return math.evaluate(lhs, s) - math.evaluate(rhs, s); }
-    catch { return NaN; }
+    try { return math.evaluate(lhs, s) - math.evaluate(rhs, s); } catch { return NaN; }
   };
-
-  const starts = [-1e3,-200,-50,-20,-10,-5,-3,-2,-1,-0.5,0,0.5,1,2,3,5,10,20,50,200,1e3];
+  const starts = [-1e3,-200,-50,-20,-10,-5,-3,-2,-1,-.5,0,.5,1,2,3,5,10,20,50,200,1e3];
   const found  = [];
-
   for (const x0 of starts) {
     const sol = newton(f, x0);
     if (sol !== null) {
@@ -576,102 +791,38 @@ function numericFallback(lhs, rhs, v) {
       if (!found.some(q => Math.abs(q - s) < 1e-6)) found.push(s);
     }
   }
-
-  if (found.length === 0) return { text: 'No real solution found', cls: null };
-  return { text: found.sort((a,b)=>a-b).map(s => `${v} ≈ ${fmtNum(s)}`).join('   or   '), cls: 'num' };
+  if (!found.length) return { tex: null, text: 'No real solution found', cls: null };
+  const parts = found.sort((a,b)=>a-b).map(s => `${v} \\approx ${fmtNum(s)}`);
+  return { tex: parts.join('\\quad\\text{or}\\quad'), text: parts.join(' or '), cls: 'num' };
 }
 
 function newton(f, x0, iter = 80) {
   let x = x0;
   for (let i = 0; i < iter; i++) {
-    const fx = f(x);
-    if (!isFinite(fx)) return null;
+    const fx = f(x); if (!isFinite(fx)) return null;
     if (Math.abs(fx) < 1e-12) return x;
-    const h   = Math.max(1e-7, Math.abs(x) * 1e-6);
-    const dfx = (f(x + h) - fx) / h;
-    if (!isFinite(dfx) || Math.abs(dfx) < 1e-15) { x += (Math.random()-.5)*.5; continue; }
-    x -= fx / dfx;
-    if (!isFinite(x)) return null;
+    const h = Math.max(1e-7, Math.abs(x)*1e-6);
+    const d = (f(x+h)-fx)/h;
+    if (!isFinite(d)||Math.abs(d)<1e-15){x+=(Math.random()-.5)*.5;continue;}
+    x -= fx/d; if (!isFinite(x)) return null;
   }
-  return isFinite(f(x)) && Math.abs(f(x)) < 1e-6 ? x : null;
+  return isFinite(f(x))&&Math.abs(f(x))<1e-6 ? x : null;
 }
 
 /* ============================================================
-   General expression  (math.js primary, nerdamer symbolic fallback)
-============================================================ */
-function handleExpression(raw) {
-  // math.js: handles sin, cos, log, factorial, matrices, units…
-  let mathErr;
-  try {
-    const val = math.evaluate(raw, numScope);
-    if (val !== undefined) return { text: fmtMathResult(val), cls: typeof val === 'number' ? 'num' : null };
-  } catch (e) { mathErr = e; }
-
-  // nerdamer: try to simplify symbolically
-  try {
-    const sym = nerdamer(raw);
-    const str = sym.toString();
-    // Only show if nerdamer produced something different (not just echoing the input)
-    if (str && str !== raw) return { text: str, cls: 'sym' };
-  } catch (_) { }
-
-  throw mathErr || new Error('Cannot evaluate');
-}
-
-/* ============================================================
-   Symbolic commands
-============================================================ */
-function cmdDerivative(raw) {
-  const m = raw.match(/^(?:diff|derivative)\s*\(\s*["']?([^"',]+?)["']?\s*,\s*["']?([a-zA-Z_]\w*)["']?(?:\s*,\s*(\d+))?\s*\)/i);
-  if (!m) throw new Error('Usage: derivative("f(x)", "x")  or  derivative("f(x)", "x", n)');
-  const [, expr, vari, orderStr] = m;
-  const order = orderStr ? parseInt(orderStr) : 1;
-  let result = nerdamer.diff(expr.trim(), vari.trim());
-  for (let i = 1; i < order; i++) result = nerdamer.diff(result.toString(), vari.trim());
-  return { text: nerdamer(result.toString()).simplify().toString(), cls: 'sym' };
-}
-
-function cmdIntegral(raw) {
-  const m = raw.match(/^integrat[e]?\s*\(\s*["']?([^"',]+?)["']?\s*,\s*["']?([a-zA-Z_]\w*)["']?\s*\)/i);
-  if (!m) throw new Error('Usage: integrate("f(x)", "x")');
-  const result = nerdamer.integrate(m[1].trim(), m[2].trim());
-  return { text: result.toString() + ' + C', cls: 'sym' };
-}
-
-function cmdSimplify(raw) {
-  const m = raw.match(/^simplify\s*\(\s*["']?(.*?)["']?\s*\)$/i);
-  if (!m) throw new Error('Usage: simplify("expression")');
-  return { text: nerdamer(m[1].trim()).simplify().toString(), cls: 'sym' };
-}
-
-function cmdExpand(raw) {
-  const m = raw.match(/^expand\s*\(\s*["']?(.*?)["']?\s*\)$/i);
-  if (!m) throw new Error('Usage: expand("expression")');
-  return { text: nerdamer.expand(m[1].trim()).toString(), cls: 'sym' };
-}
-
-function cmdFactor(raw) {
-  const m = raw.match(/^factor\s*\(\s*["']?(.*?)["']?\s*\)$/i);
-  if (!m) throw new Error('Usage: factor("expression")');
-  return { text: nerdamer.factor(m[1].trim()).toString(), cls: 'sym' };
-}
-
-/* ============================================================
-   Variable detection — finds names that are unknown (not in scope, not builtins)
+   Variable detection
 ============================================================ */
 const BUILTINS = new Set([
   'sin','cos','tan','asin','acos','atan','atan2','sinh','cosh','tanh',
   'asinh','acosh','atanh','sqrt','cbrt','exp','log','log2','log10',
   'abs','ceil','floor','round','sign','factorial','gamma','nthRoot',
-  'min','max','sum','mean','mod','pow',
+  'min','max','sum','mean','mod','pow','re','im','arg','conj',
   'pi','e','i','phi','tau','Infinity','NaN','true','false','null',
   'derivative','diff','integrate','simplify','expand','factor','solve',
-  'and','or','not','xor','re','im','arg','conj',
+  'and','or','not','xor',
 ]);
-
 function findUnknowns(expr) {
   const found = new Set();
-  // No \b — catches letters even when preceded by digits (e.g. 2x, 3y)
   for (const m of expr.matchAll(/[a-zA-Z_]\w*/g)) {
     const n = m[0];
     if (!BUILTINS.has(n) && !varNames.has(n)) found.add(n);
@@ -680,18 +831,65 @@ function findUnknowns(expr) {
 }
 
 /* ============================================================
+   Preprocessing (implicit mult for equation solving)
+============================================================ */
+function preprocess(expr) {
+  return expr
+    .replace(/(\d)([a-df-zA-DF-Z_])/g, '$1*$2')
+    .replace(/(\d)(e)(?!\d)/gi, '$1*$2')
+    .replace(/\)\s*\(/g, ')*(')
+    .replace(/([0-9])\s*\(/g, '$1*(');
+}
+
+/* ============================================================
+   LaTeX helpers
+============================================================ */
+function tryTeX(nerdExpr) {
+  try { return nerdExpr.toTeX(); } catch { return null; }
+}
+
+function solToTeX(solStr) {
+  try { return nerdamer(solStr).toTeX(); }
+  catch { return solStr; }
+}
+
+function fmtNumTeX(x) {
+  if (!isFinite(x)) return String(x);
+  const r = Math.round(x);
+  if (Math.abs(x - r) < 1e-9) return String(r);
+  // Try fraction
+  for (let d = 2; d <= 1000; d++) {
+    const n = Math.round(x * d);
+    if (n !== 0 && Math.abs(n/d - x) < 1e-9 && Math.abs(n) <= d * 20)
+      return `\\frac{${n}}{${d}}`;
+  }
+  return parseFloat(x.toPrecision(10)).toString();
+}
+
+/* ============================================================
    Formatting helpers
 ============================================================ */
+function fmtNum(x) {
+  if (typeof x !== 'number' || !isFinite(x)) return String(x);
+  const r = Math.round(x);
+  if (Math.abs(x - r) < 1e-9) return String(r);
+  for (let d = 2; d <= 1000; d++) {
+    const n = Math.round(x * d);
+    if (n !== 0 && Math.abs(n/d - x) < 1e-9 && Math.abs(n) <= d * 20) return `${n}/${d}`;
+  }
+  return parseFloat(x.toPrecision(10)).toString();
+}
+
 function fmtMathResult(val) {
-  if (val === null || val === undefined) return '';
+  if (val == null) return '';
   if (typeof val === 'boolean') return val ? 'true' : 'false';
   if (typeof val === 'number')  return fmtNum(val);
   if (typeof val === 'string')  return `"${val}"`;
   if (val.isUnit)   return val.toString();
   if (val.isMatrix) {
-    const a   = val.toArray();
-    const fmt = r => Array.isArray(r) ? '[' + r.map(fmtNum).join(', ') + ']' : fmtNum(r);
-    return '[' + a.map(fmt).join(',  ') + ']';
+    const a = val.toArray();
+    const f = r => Array.isArray(r) ? '['+r.map(fmtNum).join(', ')+']' : fmtNum(r);
+    return '[' + a.map(f).join(',  ') + ']';
   }
   if (val.isComplex) {
     const re = fmtNum(val.re), im = Math.abs(val.im);
@@ -702,24 +900,10 @@ function fmtMathResult(val) {
   try { return JSON.stringify(val); } catch { return String(val); }
 }
 
-function fmtNum(x) {
-  if (typeof x !== 'number' || !isFinite(x)) return String(x);
-  const r = Math.round(x);
-  if (Math.abs(x - r) < 1e-9) return String(r);
-  // Try small fractions
-  for (let d = 2; d <= 1000; d++) {
-    const n = Math.round(x * d);
-    if (n !== 0 && Math.abs(n / d - x) < 1e-9 && Math.abs(n) <= d * 20) return `${n}/${d}`;
-  }
-  return parseFloat(x.toPrecision(10)).toString();
-}
-
-// Parse nerdamer solution string "[2,3]" or "[1/2,x+1]"
 function splitSolutions(solStr) {
   const inner = solStr.replace(/^\[|\]$/g, '').trim();
   if (!inner) return [];
-  const parts = [];
-  let depth = 0, cur = '';
+  const parts = []; let depth = 0, cur = '';
   for (const ch of inner) {
     if ('(['.includes(ch)) depth++;
     else if (')]'.includes(ch)) depth--;
@@ -731,11 +915,8 @@ function splitSolutions(solStr) {
 }
 
 function niceError(msg = '') {
-  return msg
-    .replace(/^Error:\s*/i, '')
-    .replace(/Unexpected token.*/i, 'Syntax error')
-    .replace(/Cannot read prop.*/i, 'Syntax error')
-    .slice(0, 70);
+  return msg.replace(/^Error:\s*/i,'').replace(/Unexpected token.*/i,'Syntax error')
+            .replace(/Cannot read prop.*/i,'Syntax error').slice(0, 70);
 }
 
 /* ============================================================
@@ -743,21 +924,23 @@ function niceError(msg = '') {
 ============================================================ */
 function allLines()   { return [...document.querySelectorAll('#lines .line')]; }
 function qs(sel)      { return document.querySelector(sel); }
+function renumber()   { allLines().forEach((l, i) => { l.querySelector('.lnum').textContent = i+1; }); }
+function updateStatus(){ document.getElementById('lineCount').textContent = allLines().length; }
 
-function renumber() {
-  allLines().forEach((l, i) => { l.querySelector('.lnum').textContent = i + 1; });
-}
-
-function updateStatus() {
-  document.getElementById('lineCount').textContent = allLines().length;
+function toggleKb(hdr) {
+  const body  = document.getElementById('kbBody');
+  const arrow = hdr.querySelector('span');
+  const open  = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  arrow.textContent  = open ? '▶' : '▼';
 }
 
 function toggleRef(hdr) {
   const body  = document.getElementById('refBody');
   const arrow = hdr.querySelector('span');
   const open  = body.style.display !== 'none';
-  body.style.display  = open ? 'none' : '';
-  arrow.textContent   = open ? '▶' : '▼';
+  body.style.display = open ? 'none' : '';
+  arrow.textContent  = open ? '▶' : '▼';
 }
 
 function insertEx(el) {
