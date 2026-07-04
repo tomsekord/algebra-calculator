@@ -301,19 +301,33 @@
       </div>
 
       <div class="kb-section-label">Variables</div>
-      <div class="kb-row">
+        <div class="kb-row">
         <button class="kb var" onclick="K.type('x')">x</button>
         <button class="kb var" onclick="K.type('y')">y</button>
         <button class="kb var" onclick="K.type('z')">z</button>
         <button class="kb var" onclick="K.type('a')">a</button>
         <button class="kb var" onclick="K.type('b')">b</button>
         <button class="kb var" onclick="K.type('c')">c</button>
+        <button class="kb var" onclick="K.type('d')">d</button>
+        <button class="kb var" onclick="K.type('f')">f</button>
+        <button class="kb var" onclick="K.type('g')">g</button>
         <button class="kb var" onclick="K.type('k')">k</button>
         <button class="kb var" onclick="K.type('m')">m</button>
         <button class="kb var" onclick="K.type('n')">n</button>
+        <button class="kb var" onclick="K.type('p')">p</button>
+        <button class="kb var" onclick="K.type('q')">q</button>
         <button class="kb var" onclick="K.type('r')">r</button>
+        <button class="kb var" onclick="K.type('s')">s</button>
         <button class="kb var" onclick="K.type('t')">t</button>
+        <button class="kb var" onclick="K.type('u')">u</button>
+        <button class="kb var" onclick="K.type('v')">v</button>
+        <button class="kb var" onclick="K.type('w')">w</button>
         <button class="kb var" onclick="K.cmd('\\theta')">θ</button>
+        <button class="kb var" onclick="K.cmd('\\alpha')">α</button>
+        <button class="kb var" onclick="K.cmd('\\beta')">β</button>
+        <button class="kb var" onclick="K.cmd('\\lambda')">λ</button>
+        <button class="kb var" onclick="K.cmd('\\mu')">μ</button>
+        <button class="kb var" onclick="K.cmd('\\omega')">ω</button>
       </div>
 
     </div>
@@ -369,11 +383,27 @@ const MQ_CONFIG = {
    Boot
 ============================================================ */
 document.addEventListener('DOMContentLoaded', () => {
+  fixSqrtScaling();
   buildPalette();
   for (let i = 0; i < 3; i++) addLine('', false);
   const f = document.querySelector('.mq-field');
   if (f && f.__mq) f.__mq.focus();
 });
+
+/* Fix MathQuill's broken scaleY on empty sqrt boxes */
+function fixSqrtScaling() {
+  function patch(el) {
+    if (!el.classList || !el.classList.contains('mq-sqrt-prefix')) return;
+    const m = (el.style.transform || '').match(/scale\s*\([^,]+,\s*([-\d.]+)\)/);
+    if (m && Math.abs(parseFloat(m[1])) < 0.5) el.style.transform = 'scale(1,1)';
+  }
+  new MutationObserver(muts => {
+    muts.forEach(m => {
+      if (m.type === 'attributes') { patch(m.target); }
+      else m.addedNodes.forEach(n => { if (n.nodeType === 1) { patch(n); n.querySelectorAll('.mq-sqrt-prefix').forEach(patch); } });
+    });
+  }).observe(document.body, { attributes: true, subtree: true, attributeFilter: ['style'], childList: true });
+}
 
 /* ============================================================
    Line management
