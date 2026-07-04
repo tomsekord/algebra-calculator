@@ -20,6 +20,7 @@
       --green:    #4fc3a1;
       --blue:     #79b8ff;
       --red:      #ff6b8a;
+      --gold:     #e8c36a;
     }
 
     body {
@@ -31,7 +32,6 @@
       flex-direction: column;
     }
 
-    /* ── Header ── */
     header {
       background: linear-gradient(135deg, #1a1a2e 0%, #0f0f28 100%);
       border-bottom: 1px solid var(--border);
@@ -52,14 +52,8 @@
     }
     header h1 { font-size: 1.25rem; font-weight: 700; line-height: 1.2; }
     header p  { font-size: 0.75rem; color: var(--dim); margin-top: 1px; }
+    .header-right { margin-left: auto; display: flex; gap: 8px; }
 
-    .header-right {
-      margin-left: auto;
-      display: flex;
-      gap: 8px;
-    }
-
-    /* ── Buttons ── */
     .btn {
       background: var(--card);
       border: 1px solid var(--border);
@@ -73,15 +67,8 @@
     }
     .btn:hover { background: var(--accent); border-color: var(--accent); }
 
-    /* ── Main layout ── */
-    main {
-      max-width: 900px;
-      width: 100%;
-      margin: 28px auto;
-      padding: 0 18px 60px;
-    }
+    main { max-width: 920px; width: 100%; margin: 28px auto; padding: 0 18px 60px; }
 
-    /* ── Calculator card ── */
     .calc-card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -92,9 +79,7 @@
     .calc-titlebar {
       background: var(--card);
       padding: 9px 16px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
+      display: flex; align-items: center; gap: 6px;
       border-bottom: 1px solid var(--border);
     }
     .dot { width: 11px; height: 11px; border-radius: 50%; }
@@ -103,32 +88,26 @@
     .dot-g { background: #28c840; }
     .calc-fname { margin-left: auto; font-size: 0.72rem; color: var(--dim); font-family: monospace; }
 
-    /* ── Lines area ── */
     .lines { padding: 10px 12px 6px; }
 
     .line {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 42px;
-      padding: 3px 10px;
-      border-radius: 8px;
-      border: 1px solid transparent;
+      display: flex; align-items: center; gap: 8px;
+      min-height: 44px; padding: 4px 10px;
+      border-radius: 8px; border: 1px solid transparent;
       margin-bottom: 3px;
       transition: border-color 0.12s, background 0.12s;
     }
     .line:focus-within { background: rgba(124,92,191,.07); border-color: var(--accent); }
-    .line.is-error   { border-color: rgba(255,107,138,.35); }
-    .line.is-result  { border-color: rgba(79,195,161,.18); }
-    .line.is-comment { opacity: .55; }
+    .line.is-error    { border-color: rgba(255,107,138,.4); }
+    .line.is-result   { border-color: rgba(79,195,161,.2); }
+    .line.is-comment  { opacity: .5; }
 
     .lnum {
       font-size: 0.72rem; color: var(--dim);
       font-family: 'Consolas', monospace;
-      min-width: 20px; text-align: right;
+      min-width: 22px; text-align: right;
       user-select: none; flex-shrink: 0;
     }
-
     .linput {
       flex: 1; min-width: 0;
       background: none; border: none; outline: none;
@@ -142,17 +121,15 @@
     .larrow { color: var(--dim); font-size: 0.85rem; flex-shrink: 0; min-width: 14px; }
 
     .lresult {
-      font-size: 0.92rem;
+      font-size: 0.93rem;
       font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
-      text-align: right;
-      max-width: 260px;
-      word-break: break-word;
-      flex-shrink: 0;
-      color: var(--green);
+      text-align: right; max-width: 300px;
+      word-break: break-word; flex-shrink: 0;
     }
-    .lresult.num   { color: var(--blue); }
-    .lresult.err   { color: var(--red); font-size: 0.78rem; }
-    .lresult.sym   { color: var(--accent-l); }
+    .lresult.num  { color: var(--blue); }
+    .lresult.sym  { color: var(--gold); }
+    .lresult.ok   { color: var(--green); }
+    .lresult.err  { color: var(--red); font-size: 0.78rem; }
 
     .ldel {
       background: none; border: none; cursor: pointer;
@@ -163,48 +140,33 @@
     .line:hover .ldel, .line:focus-within .ldel { color: var(--dim); }
     .ldel:hover { color: var(--red) !important; }
 
-    /* ── Add-line button ── */
     .add-line {
       width: 100%; background: none;
       border: 1.5px dashed var(--border);
       color: var(--dim); padding: 9px 12px;
-      border-radius: 8px; cursor: pointer;
-      font-size: 0.83rem;
+      border-radius: 8px; cursor: pointer; font-size: 0.83rem;
       margin: 3px 0 12px;
       transition: border-color 0.15s, color 0.15s, background 0.15s;
       display: flex; align-items: center; justify-content: center; gap: 6px;
     }
-    .add-line:hover {
-      border-color: var(--accent);
-      color: var(--accent-l);
-      background: rgba(124,92,191,.05);
-    }
+    .add-line:hover { border-color: var(--accent); color: var(--accent-l); background: rgba(124,92,191,.05); }
 
-    /* ── Status strip ── */
     .status {
-      padding: 8px 16px;
-      background: var(--card);
+      padding: 8px 16px; background: var(--card);
       border-top: 1px solid var(--border);
-      display: flex; gap: 20px;
+      display: flex; gap: 20px; flex-wrap: wrap;
       font-size: 0.72rem; color: var(--dim);
     }
     .status b { color: var(--text); font-weight: 600; }
 
-    /* ── Reference panel ── */
     .ref {
-      margin-top: 20px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      overflow: hidden;
+      margin-top: 20px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
     }
     .ref-hdr {
-      background: var(--card);
-      padding: 11px 18px;
-      cursor: pointer;
+      background: var(--card); padding: 11px 18px; cursor: pointer;
       display: flex; justify-content: space-between; align-items: center;
-      font-size: 0.86rem; font-weight: 600;
-      user-select: none;
+      font-size: 0.86rem; font-weight: 600; user-select: none;
       border-bottom: 1px solid var(--border);
     }
     .ref-hdr:hover { background: #1f1f38; }
@@ -212,47 +174,30 @@
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
     }
-    .ref-cat {
-      padding: 14px 18px;
-      border-right: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-    }
+    .ref-cat { padding: 14px 18px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
     .ref-cat:last-child { border-right: none; }
-    .ref-cat h3 {
-      font-size: 0.65rem; text-transform: uppercase;
-      letter-spacing: 0.9px; color: var(--accent-l);
-      margin-bottom: 9px;
-    }
+    .ref-cat h3 { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.9px; color: var(--accent-l); margin-bottom: 9px; }
     .ex {
-      display: block;
-      background: var(--bg);
-      border-radius: 5px;
-      padding: 4px 8px;
-      font-size: 0.8rem;
+      display: block; background: var(--bg); border-radius: 5px;
+      padding: 4px 8px; font-size: 0.8rem;
       font-family: 'Cascadia Code', 'Consolas', monospace;
-      color: var(--green);
-      margin-bottom: 5px;
-      cursor: pointer;
-      transition: background 0.1s;
-      user-select: none;
+      color: var(--green); margin-bottom: 5px; cursor: pointer;
+      transition: background 0.1s; user-select: none;
     }
     .ex:hover { background: rgba(79,195,161,.12); }
 
-    /* ── Toast ── */
     #toast {
       position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
       background: var(--accent); color: #fff;
       padding: 8px 20px; border-radius: 8px;
       font-size: 0.85rem; opacity: 0;
-      transition: opacity 0.3s; pointer-events: none;
-      z-index: 100;
+      transition: opacity 0.3s; pointer-events: none; z-index: 100;
     }
     #toast.show { opacity: 1; }
 
     @media (max-width: 600px) {
       .ref-body { grid-template-columns: 1fr 1fr; }
-      .lresult  { max-width: 120px; }
-      header h1 { font-size: 1rem; }
+      .lresult  { max-width: 140px; }
     }
   </style>
 </head>
@@ -262,7 +207,7 @@
   <div class="logo">∑</div>
   <div>
     <h1>Algebra Calculator</h1>
-    <p>Multi-line · variables · equations · calculus</p>
+    <p>Symbolic · exact answers · multi-line</p>
   </div>
   <div class="header-right">
     <button class="btn" onclick="loadExamples()">Examples</button>
@@ -281,30 +226,27 @@
     <div class="lines" id="lines"></div>
     <div class="status">
       <span>Lines: <b id="lineCount">0</b></span>
-      <span><b>Enter</b> → new line &nbsp;·&nbsp; <b>↑↓</b> navigate &nbsp;·&nbsp; <b>Backspace</b> on empty → delete</span>
+      <span><b>Enter</b> new line &nbsp;·&nbsp; <b>↑↓</b> navigate &nbsp;·&nbsp; <b>Backspace</b> on empty → delete</span>
     </div>
   </div>
 
   <div class="ref">
-    <div class="ref-hdr" id="refHdr" onclick="toggleRef()">
-      📖 Quick Reference — click any example to insert
-      <span id="refArrow">▼</span>
+    <div class="ref-hdr" onclick="toggleRef(this)">
+      📖 Quick Reference — click any example to insert &nbsp;<span>▼</span>
     </div>
     <div class="ref-body" id="refBody">
       <div class="ref-cat">
         <h3>Arithmetic</h3>
-        <code class="ex" onclick="insertEx(this)">2 + 3 * 4</code>
-        <code class="ex" onclick="insertEx(this)">100 / 7</code>
         <code class="ex" onclick="insertEx(this)">2 ^ 10</code>
         <code class="ex" onclick="insertEx(this)">sqrt(144)</code>
-        <code class="ex" onclick="insertEx(this)">factorial(7)</code>
+        <code class="ex" onclick="insertEx(this)">factorial(8)</code>
+        <code class="ex" onclick="insertEx(this)">abs(-7)</code>
         <code class="ex" onclick="insertEx(this)">mod(17, 5)</code>
       </div>
       <div class="ref-cat">
         <h3>Variables</h3>
         <code class="ex" onclick="insertEx(this)">x = 5</code>
         <code class="ex" onclick="insertEx(this)">y = x^2 + 1</code>
-        <code class="ex" onclick="insertEx(this)">x + y</code>
         <code class="ex" onclick="insertEx(this)">r = 7</code>
         <code class="ex" onclick="insertEx(this)">pi * r^2</code>
       </div>
@@ -318,20 +260,21 @@
       <div class="ref-cat">
         <h3>Trig / Math</h3>
         <code class="ex" onclick="insertEx(this)">sin(pi / 4)</code>
-        <code class="ex" onclick="insertEx(this)">cos(0)</code>
+        <code class="ex" onclick="insertEx(this)">cos(pi / 3)</code>
         <code class="ex" onclick="insertEx(this)">log(1000, 10)</code>
-        <code class="ex" onclick="insertEx(this)">abs(-42)</code>
-        <code class="ex" onclick="insertEx(this)">round(pi, 4)</code>
-      </div>
-      <div class="ref-cat">
-        <h3>Calculus</h3>
-        <code class="ex" onclick="insertEx(this)">derivative("x^3 + 2x", "x")</code>
-        <code class="ex" onclick="insertEx(this)">derivative("sin(x)", "x")</code>
+        <code class="ex" onclick="insertEx(this)">round(pi, 6)</code>
       </div>
       <div class="ref-cat">
         <h3>Symbolic</h3>
-        <code class="ex" onclick="insertEx(this)">simplify("2x + 3x")</code>
-        <code class="ex" onclick="insertEx(this)">simplify("x^2 + 2x + 1")</code>
+        <code class="ex" onclick="insertEx(this)">expand("(x+1)^3")</code>
+        <code class="ex" onclick="insertEx(this)">factor("x^2-4")</code>
+        <code class="ex" onclick="insertEx(this)">simplify("2x+3x")</code>
+      </div>
+      <div class="ref-cat">
+        <h3>Calculus</h3>
+        <code class="ex" onclick="insertEx(this)">derivative("x^3+2x", "x")</code>
+        <code class="ex" onclick="insertEx(this)">derivative("sin(x)", "x")</code>
+        <code class="ex" onclick="insertEx(this)">integrate("x^2", "x")</code>
       </div>
     </div>
   </div>
@@ -339,118 +282,113 @@
 
 <div id="toast"></div>
 
+<!-- nerdamer: symbolic CAS (equation solving, factoring, calculus) -->
+<script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/nerdamer.core.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Algebra.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Calculus.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Solve.js"></script>
+<!-- math.js: numeric fallback (trig, log, factorial, units) -->
 <script src="https://cdn.jsdelivr.net/npm/mathjs@13/lib/browser/math.min.js"></script>
-<script>
-/* ======================================================
-   State
-====================================================== */
-let refOpen     = true;
-let lastFocus   = null;   // last focused .line element
 
-/* ======================================================
+<script>
+/* ============================================================
+   State — rebuilt from scratch on every evaluateAll() pass
+============================================================ */
+let numScope  = {};      // math.js variable values  { x: 5, r: 7, … }
+let varNames  = new Set(); // names that have been assigned so far
+let lastFocus = null;    // last focused .line element
+
+/* ============================================================
    Boot
-====================================================== */
+============================================================ */
 document.addEventListener('DOMContentLoaded', () => {
   for (let i = 0; i < 3; i++) addLine('', false);
-  first('.linput').focus();
+  qs('.linput').focus();
 });
 
-/* ======================================================
+/* ============================================================
    Line management
-====================================================== */
+============================================================ */
 function addLine(value = '', doFocus = true) {
-  const container = document.getElementById('lines');
-
-  // Remove existing add-button
-  const existingAdd = container.querySelector('.add-line');
-  if (existingAdd) existingAdd.remove();
+  const container = qs('#lines');
+  const addBtn    = container.querySelector('.add-line');
+  if (addBtn) addBtn.remove();
 
   const div = document.createElement('div');
   div.className = 'line';
-
   div.innerHTML = `
     <span class="lnum">?</span>
     <input class="linput" type="text" autocomplete="off" autocorrect="off"
            spellcheck="false" placeholder="expression or equation…" />
     <span class="larrow"></span>
     <span class="lresult"></span>
-    <button class="ldel" title="Remove line" tabindex="-1">✕</button>
-  `;
-
+    <button class="ldel" tabindex="-1" title="Remove">✕</button>`;
   container.appendChild(div);
 
-  // Re-add the add button
-  const addBtn = document.createElement('button');
-  addBtn.className = 'add-line';
-  addBtn.innerHTML = '＋ &nbsp;Add line';
-  addBtn.onclick = () => addLine();
-  container.appendChild(addBtn);
+  const newAddBtn = document.createElement('button');
+  newAddBtn.className = 'add-line';
+  newAddBtn.innerHTML = '＋ &nbsp;Add line';
+  newAddBtn.onclick = () => addLine();
+  container.appendChild(newAddBtn);
 
   const input = div.querySelector('.linput');
   if (value) input.value = value;
-
   input.addEventListener('input',   evaluateAll);
   input.addEventListener('keydown', onKeydown);
   input.addEventListener('focus',   () => { lastFocus = div; });
-
   div.querySelector('.ldel').addEventListener('click', () => deleteLine(div));
 
-  updateNumbers();
-  evaluateAll();
-  updateStatus();
-
+  renumber(); evaluateAll(); updateStatus();
   if (doFocus) setTimeout(() => input.focus(), 0);
   return div;
 }
 
 function deleteLine(line) {
   const lines = allLines();
-  if (lines.length <= 1) {
-    line.querySelector('.linput').value = '';
-    evaluateAll();
-    return;
-  }
-  const idx = lines.indexOf(line);
-  const target = lines[Math.max(0, idx - 1)];
+  if (lines.length <= 1) { line.querySelector('.linput').value = ''; evaluateAll(); return; }
+  const idx  = lines.indexOf(line);
+  const prev = lines[Math.max(0, idx - 1)];
   line.remove();
-  updateNumbers();
-  evaluateAll();
-  updateStatus();
-  target.querySelector('.linput').focus();
+  renumber(); evaluateAll(); updateStatus();
+  prev.querySelector('.linput').focus();
 }
 
 function clearAll() {
-  document.getElementById('lines').innerHTML = '';
+  qs('#lines').innerHTML = '';
   addLine('', false);
-  first('.linput').focus();
+  qs('.linput').focus();
 }
 
 function loadExamples() {
-  document.getElementById('lines').innerHTML = '';
-  const ex = [
-    '# ── Arithmetic ─────────────',
-    '2^10',
+  qs('#lines').innerHTML = '';
+  [
+    '# ── Arithmetic ──────────────',
+    '2 ^ 10',
     'sqrt(2) + pi',
-    'factorial(8)',
+    'factorial(10)',
     '',
-    '# ── Variables ──────────────',
+    '# ── Variables ───────────────',
     'r = 6',
     'pi * r^2',
     '',
-    '# ── Equations ──────────────',
-    '3x - 2 = x + 8',
+    '# ── Equations (exact) ───────',
     'x^2 - 5x + 6 = 0',
+    '3x - 2 = x + 8',
     '',
-    '# ── Calculus ───────────────',
-    'derivative("x^3 - 3x", "x")',
-  ];
-  ex.forEach(v => addLine(v, false));
+    '# ── Symbolic ────────────────',
+    'factor("x^2-9")',
+    'expand("(x+2)^3")',
+    '',
+    '# ── Calculus ────────────────',
+    'derivative("x^4 - 3x^2 + 1", "x")',
+    'integrate("x^3", "x")',
+  ].forEach(v => addLine(v, false));
   evaluateAll();
 }
 
-/* ======================================================
+/* ============================================================
    Keyboard navigation
-====================================================== */
+============================================================ */
 function onKeydown(e) {
   const input = e.target;
   const line  = input.closest('.line');
@@ -474,36 +412,36 @@ function onKeydown(e) {
   }
 }
 
-/* ======================================================
-   Evaluation
-====================================================== */
-const SCOPE_HISTORY = [];   // not used directly — scope rebuilt each pass
-
+/* ============================================================
+   Evaluation — rebuild scope from top to bottom every time
+============================================================ */
 function evaluateAll() {
-  const scope = {};
+  // Full reset so every pass is deterministic
+  nerdamer.clearVars();
+  numScope = {};
+  varNames = new Set();
+
   allLines().forEach(line => {
     const input  = line.querySelector('.linput');
     const arrow  = line.querySelector('.larrow');
     const result = line.querySelector('.lresult');
-    const expr   = input.value.trim();
+    const raw    = input.value.trim();
 
-    // Reset
-    line.className  = 'line';
+    line.className     = 'line';
     arrow.textContent  = '';
     result.textContent = '';
     result.className   = 'lresult';
 
-    if (!expr) return;
+    if (!raw) return;
 
-    // Comments
-    if (expr.startsWith('#') || expr.startsWith('//')) {
+    if (raw.startsWith('#') || raw.startsWith('//')) {
       line.classList.add('is-comment');
       return;
     }
 
     try {
-      const { text, cls } = evalLine(expr, scope);
-      if (text !== null) {
+      const { text, cls } = evalLine(raw);
+      if (text !== null && text !== undefined) {
         arrow.textContent  = '→';
         result.textContent = text;
         if (cls) result.classList.add(cls);
@@ -518,226 +456,308 @@ function evaluateAll() {
   });
 }
 
-/* Returns { text, cls } — cls ∈ 'num'|'sym'|'err'|null */
-function evalLine(expr, scope) {
-  // ── derivative / diff ──
-  if (/^(derivative|diff)\s*\(/i.test(expr)) return evalDerivative(expr);
+/* ============================================================
+   Single-line evaluator  →  { text, cls }
+   cls: 'num' | 'sym' | 'ok' | 'err' | null
+============================================================ */
+function evalLine(raw) {
+  // ── Symbolic commands ──────────────────────────────────────
+  if (/^(diff|derivative)\s*\(/i.test(raw))  return cmdDerivative(raw);
+  if (/^integrat[e]?\s*\(/i.test(raw))       return cmdIntegral(raw);
+  if (/^simplify\s*\(/i.test(raw))           return cmdSimplify(raw);
+  if (/^expand\s*\(/i.test(raw))             return cmdExpand(raw);
+  if (/^factor\s*\(/i.test(raw))             return cmdFactor(raw);
 
-  // ── simplify ──
-  if (/^simplify\s*\(/i.test(expr)) return evalSimplify(expr);
+  // ── Assignment:  name = expr  (no prior = on the left) ────
+  const asgn = raw.match(/^([a-zA-Z_]\w*)\s*=(?!=)\s*(.+)$/);
+  if (asgn) return handleAssignment(asgn[1], asgn[2].trim());
 
-  // ── equations (contains = but not ==, !=, <=, >=) ──
-  if (/(?<![=!<>])=(?!=)/.test(expr)) return evalEquation(expr, scope);
+  // ── Equation:  expr = expr  (contains unknowns) ───────────
+  if (/(?<![=!<>])=(?!=)/.test(raw)) return handleEquation(raw);
 
-  // ── normal expression ──
-  const result = math.evaluate(expr, scope);
-  if (result === undefined || typeof result === 'function') return { text: null, cls: null };
-
-  return { text: fmtResult(result), cls: typeof result === 'number' ? 'num' : null };
+  // ── Regular expression ─────────────────────────────────────
+  return handleExpression(raw);
 }
 
-/* ── Derivative ── */
-function evalDerivative(expr) {
-  const m = expr.match(/^(?:derivative|diff)\s*\(\s*["']?([^"',]+?)["']?\s*,\s*["']?([a-zA-Z_]\w*)["']?\s*\)/i);
-  if (!m) throw new Error('Usage: derivative("f(x)", "x")');
-  const deriv = math.derivative(m[1].trim(), m[2].trim());
-  const simp  = math.simplify(deriv);
-  return { text: simp.toString(), cls: 'sym' };
+/* ============================================================
+   Assignment:  x = 5  or  area = pi * r^2
+============================================================ */
+function handleAssignment(name, rhs) {
+  // Try math.js first (handles factorial, trig, known vars)
+  try {
+    const val = math.evaluate(rhs, numScope);
+    if (typeof val === 'number' && isFinite(val)) {
+      numScope[name] = val;
+      varNames.add(name);
+      nerdamer.setVar(name, String(val));
+      return { text: fmtNum(val), cls: 'num' };
+    }
+    // Non-numeric math.js result (matrix, unit, etc.)
+    const text = fmtMathResult(val);
+    numScope[name] = val;
+    varNames.add(name);
+    return { text, cls: null };
+  } catch (_) { /* fall through to nerdamer */ }
+
+  // Try nerdamer (symbolic RHS)
+  try {
+    const sym = nerdamer(rhs);
+    const str = sym.toString();
+    nerdamer.setVar(name, str);
+    varNames.add(name);
+    return { text: str, cls: 'sym' };
+  } catch (e) {
+    throw new Error(`Cannot evaluate: ${rhs}`);
+  }
 }
 
-/* ── Simplify ── */
-function evalSimplify(expr) {
-  const m = expr.match(/^simplify\s*\(\s*["']?(.*?)["']?\s*\)$/i);
-  if (!m) throw new Error('Usage: simplify("expression")');
-  const simp = math.simplify(m[1].trim());
-  return { text: simp.toString(), cls: 'sym' };
-}
-
-/* ── Equations ── */
-function evalEquation(expr, scope) {
-  const eqM = expr.match(/(?<![=!<>])=(?!=)/);
+/* ============================================================
+   Equation solving  →  exact symbolic answers via nerdamer
+============================================================ */
+function handleEquation(raw) {
+  const eqM = raw.match(/(?<![=!<>])=(?!=)/);
   if (!eqM) throw new Error('Invalid equation');
 
-  const lhsRaw = expr.slice(0, eqM.index).trim();
-  const rhsRaw = expr.slice(eqM.index + 1).trim();
+  const lhs = raw.slice(0, eqM.index).trim();
+  const rhs = raw.slice(eqM.index + 1).trim();
 
-  // Variable assignment: singleName = value
-  if (/^[a-zA-Z_]\w*$/.test(lhsRaw)) {
+  const unknowns = findUnknowns(raw);
+
+  // No unknowns → verify both sides
+  if (unknowns.length === 0) {
     try {
-      const val = math.evaluate(preprocess(rhsRaw), scope);
-      scope[lhsRaw] = val;
-      return { text: fmtResult(val), cls: 'num' };
-    } catch (_) {
-      // RHS is symbolic; store name for reference
-      scope[lhsRaw] = lhsRaw;
-      return { text: null, cls: null };
+      const l = math.evaluate(lhs, numScope);
+      const r = math.evaluate(rhs, numScope);
+      const equal = typeof l === 'number' && typeof r === 'number'
+                    ? Math.abs(l - r) < 1e-9
+                    : String(l) === String(r);
+      return { text: equal ? '✓  True' : '✗  False', cls: equal ? 'ok' : null };
+    } catch {
+      return { text: 'Cannot verify', cls: 'err' };
     }
   }
 
-  // Equation to solve
-  const unknowns = findUnknowns(expr, scope);
-
-  if (unknowns.length === 0) {
-    // All vars known — verify
-    const l = Number(math.evaluate(preprocess(lhsRaw), scope));
-    const r = Number(math.evaluate(preprocess(rhsRaw), scope));
-    return { text: Math.abs(l - r) < 1e-9 ? '✓  True' : '✗  False', cls: null };
-  }
-
   if (unknowns.length > 1) {
-    return { text: `${unknowns.length} unknowns (${unknowns.join(', ')})`, cls: 'err' };
+    return { text: `${unknowns.length} unknowns (${unknowns.join(', ')}) — can't solve`, cls: 'err' };
   }
 
-  const v    = unknowns[0];
-  const sols = numericSolve(preprocess(lhsRaw), preprocess(rhsRaw), v, scope);
+  const v = unknowns[0];
 
-  if (sols.length === 0) return { text: 'No real solution', cls: null };
-
-  const label = sols.map(s => `${v} = ${fmtNum(s)}`).join('   or   ');
-  return { text: label, cls: 'num' };
+  // Build  lhs − rhs = 0  and pass to nerdamer.solve
+  try {
+    const expr = `(${lhs})-(${rhs})`;
+    const sols = nerdamer.solve(expr, v);
+    const parts = splitSolutions(sols.toString());
+    if (parts.length === 0) return { text: 'No real solution', cls: null };
+    return { text: parts.map(s => `${v} = ${s}`).join('   or   '), cls: 'num' };
+  } catch (_) {
+    // nerdamer can't solve it → numeric fallback
+    return numericFallback(lhs, rhs, v);
+  }
 }
 
-/* ======================================================
-   Numeric solver (Newton's method, multiple starts)
-====================================================== */
-function numericSolve(lhs, rhs, variable, scope) {
+/* ============================================================
+   Numeric fallback (Newton's method) for equations nerdamer can't crack
+============================================================ */
+function numericFallback(lhs, rhs, v) {
   const f = x => {
-    const s = { ...scope, [variable]: x };
-    try { return Number(math.evaluate(lhs, s)) - Number(math.evaluate(rhs, s)); }
+    const s = { ...numScope, [v]: x };
+    try { return math.evaluate(lhs, s) - math.evaluate(rhs, s); }
     catch { return NaN; }
   };
 
-  const starts = [-1000,-200,-50,-20,-10,-5,-3,-2,-1,-0.5,0,0.5,1,2,3,5,10,20,50,200,1000];
+  const starts = [-1e3,-200,-50,-20,-10,-5,-3,-2,-1,-0.5,0,0.5,1,2,3,5,10,20,50,200,1e3];
   const found  = [];
 
   for (const x0 of starts) {
     const sol = newton(f, x0);
     if (sol !== null) {
-      const s = Math.round(sol * 1e8) / 1e8;
-      if (!found.some(v => Math.abs(v - s) < 1e-6)) found.push(s);
+      const s = Math.round(sol * 1e9) / 1e9;
+      if (!found.some(q => Math.abs(q - s) < 1e-6)) found.push(s);
     }
   }
 
-  return found.sort((a, b) => a - b);
+  if (found.length === 0) return { text: 'No real solution found', cls: null };
+  return { text: found.sort((a,b)=>a-b).map(s => `${v} ≈ ${fmtNum(s)}`).join('   or   '), cls: 'num' };
 }
 
-function newton(f, x0, maxIter = 80) {
+function newton(f, x0, iter = 80) {
   let x = x0;
-  for (let i = 0; i < maxIter; i++) {
+  for (let i = 0; i < iter; i++) {
     const fx = f(x);
     if (!isFinite(fx)) return null;
     if (Math.abs(fx) < 1e-12) return x;
     const h   = Math.max(1e-7, Math.abs(x) * 1e-6);
     const dfx = (f(x + h) - fx) / h;
-    if (!isFinite(dfx) || Math.abs(dfx) < 1e-15) { x += (Math.random() - .5) * .5; continue; }
-    const dx = fx / dfx;
-    x -= dx;
+    if (!isFinite(dfx) || Math.abs(dfx) < 1e-15) { x += (Math.random()-.5)*.5; continue; }
+    x -= fx / dfx;
     if (!isFinite(x)) return null;
   }
-  return (isFinite(f(x)) && Math.abs(f(x)) < 1e-6) ? x : null;
+  return isFinite(f(x)) && Math.abs(f(x)) < 1e-6 ? x : null;
 }
 
-/* ======================================================
-   Preprocessing — implicit multiplication
-====================================================== */
-function preprocess(expr) {
-  return expr
-    // 2x → 2*x  (skip scientific-ish patterns: don't alter 2e3 here naively)
-    .replace(/(\d)([a-df-zA-DF-Z_])/g, '$1*$2')     // digit + letter (not e/E)
-    .replace(/(\d)(e)(?!\d)/gi, '$1*$2')              // 2e but not 2e3
-    .replace(/\)\s*\(/g, ')*(')                       // )( → )*(
-    .replace(/([0-9])\s*\(/g, '$1*(');                // 2( → 2*(
+/* ============================================================
+   General expression  (math.js primary, nerdamer symbolic fallback)
+============================================================ */
+function handleExpression(raw) {
+  // math.js: handles sin, cos, log, factorial, matrices, units…
+  let mathErr;
+  try {
+    const val = math.evaluate(raw, numScope);
+    if (val !== undefined) return { text: fmtMathResult(val), cls: typeof val === 'number' ? 'num' : null };
+  } catch (e) { mathErr = e; }
+
+  // nerdamer: try to simplify symbolically
+  try {
+    const sym = nerdamer(raw);
+    const str = sym.toString();
+    // Only show if nerdamer produced something different (not just echoing the input)
+    if (str && str !== raw) return { text: str, cls: 'sym' };
+  } catch (_) { }
+
+  throw mathErr || new Error('Cannot evaluate');
 }
 
-/* ======================================================
-   Variable detection
-====================================================== */
+/* ============================================================
+   Symbolic commands
+============================================================ */
+function cmdDerivative(raw) {
+  const m = raw.match(/^(?:diff|derivative)\s*\(\s*["']?([^"',]+?)["']?\s*,\s*["']?([a-zA-Z_]\w*)["']?(?:\s*,\s*(\d+))?\s*\)/i);
+  if (!m) throw new Error('Usage: derivative("f(x)", "x")  or  derivative("f(x)", "x", n)');
+  const [, expr, vari, orderStr] = m;
+  const order = orderStr ? parseInt(orderStr) : 1;
+  let result = nerdamer.diff(expr.trim(), vari.trim());
+  for (let i = 1; i < order; i++) result = nerdamer.diff(result.toString(), vari.trim());
+  return { text: nerdamer(result.toString()).simplify().toString(), cls: 'sym' };
+}
+
+function cmdIntegral(raw) {
+  const m = raw.match(/^integrat[e]?\s*\(\s*["']?([^"',]+?)["']?\s*,\s*["']?([a-zA-Z_]\w*)["']?\s*\)/i);
+  if (!m) throw new Error('Usage: integrate("f(x)", "x")');
+  const result = nerdamer.integrate(m[1].trim(), m[2].trim());
+  return { text: result.toString() + ' + C', cls: 'sym' };
+}
+
+function cmdSimplify(raw) {
+  const m = raw.match(/^simplify\s*\(\s*["']?(.*?)["']?\s*\)$/i);
+  if (!m) throw new Error('Usage: simplify("expression")');
+  return { text: nerdamer(m[1].trim()).simplify().toString(), cls: 'sym' };
+}
+
+function cmdExpand(raw) {
+  const m = raw.match(/^expand\s*\(\s*["']?(.*?)["']?\s*\)$/i);
+  if (!m) throw new Error('Usage: expand("expression")');
+  return { text: nerdamer.expand(m[1].trim()).toString(), cls: 'sym' };
+}
+
+function cmdFactor(raw) {
+  const m = raw.match(/^factor\s*\(\s*["']?(.*?)["']?\s*\)$/i);
+  if (!m) throw new Error('Usage: factor("expression")');
+  return { text: nerdamer.factor(m[1].trim()).toString(), cls: 'sym' };
+}
+
+/* ============================================================
+   Variable detection — finds names that are unknown (not in scope, not builtins)
+============================================================ */
 const BUILTINS = new Set([
   'sin','cos','tan','asin','acos','atan','atan2','sinh','cosh','tanh',
   'asinh','acosh','atanh','sqrt','cbrt','exp','log','log2','log10',
-  'abs','ceil','floor','round','sign','mod','pow','nthRoot','factorial',
-  'gamma','min','max','sum','mean','derivative','diff','simplify',
+  'abs','ceil','floor','round','sign','factorial','gamma','nthRoot',
+  'min','max','sum','mean','mod','pow',
   'pi','e','i','phi','tau','Infinity','NaN','true','false','null',
-  'and','or','not','xor','re','im','arg','conj','square','cube',
-  'variance','std','median','combinations','permutations',
+  'derivative','diff','integrate','simplify','expand','factor','solve',
+  'and','or','not','xor','re','im','arg','conj',
 ]);
 
-function findUnknowns(expr, scope) {
+function findUnknowns(expr) {
   const found = new Set();
-  for (const m of expr.matchAll(/\b([a-zA-Z_]\w*)\b/g)) {
-    const n = m[1];
-    if (!BUILTINS.has(n) && !(n in scope)) found.add(n);
+  // No \b — catches letters even when preceded by digits (e.g. 2x, 3y)
+  for (const m of expr.matchAll(/[a-zA-Z_]\w*/g)) {
+    const n = m[0];
+    if (!BUILTINS.has(n) && !varNames.has(n)) found.add(n);
   }
   return [...found];
 }
 
-/* ======================================================
-   Formatting
-====================================================== */
-function fmtResult(v) {
-  if (v === null || v === undefined) return '';
-  if (typeof v === 'boolean') return v ? 'true' : 'false';
-  if (typeof v === 'number')  return fmtNum(v);
-  if (typeof v === 'string')  return `"${v}"`;
-  if (v && v.isUnit)   return v.toString();
-  if (v && v.isMatrix) {
-    const a = v.toArray();
+/* ============================================================
+   Formatting helpers
+============================================================ */
+function fmtMathResult(val) {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'boolean') return val ? 'true' : 'false';
+  if (typeof val === 'number')  return fmtNum(val);
+  if (typeof val === 'string')  return `"${val}"`;
+  if (val.isUnit)   return val.toString();
+  if (val.isMatrix) {
+    const a   = val.toArray();
     const fmt = r => Array.isArray(r) ? '[' + r.map(fmtNum).join(', ') + ']' : fmtNum(r);
     return '[' + a.map(fmt).join(',  ') + ']';
   }
-  if (v && v.isComplex) {
-    const re = fmtNum(v.re), im = fmtNum(v.im);
-    if (v.im === 0) return re;
-    if (v.re === 0) return `${im}i`;
-    const sign = v.im >= 0 ? '+' : '-';
-    return `${re} ${sign} ${fmtNum(Math.abs(v.im))}i`;
+  if (val.isComplex) {
+    const re = fmtNum(val.re), im = Math.abs(val.im);
+    if (val.im === 0) return re;
+    if (val.re === 0) return `${fmtNum(val.im)}i`;
+    return `${re} ${val.im >= 0 ? '+' : '−'} ${fmtNum(im)}i`;
   }
-  try { return JSON.stringify(v); } catch { return String(v); }
+  try { return JSON.stringify(val); } catch { return String(val); }
 }
 
 function fmtNum(x) {
   if (typeof x !== 'number' || !isFinite(x)) return String(x);
-  // Integer?
   const r = Math.round(x);
   if (Math.abs(x - r) < 1e-9) return String(r);
-  // Simple fraction?
-  for (let d = 2; d <= 500; d++) {
+  // Try small fractions
+  for (let d = 2; d <= 1000; d++) {
     const n = Math.round(x * d);
-    if (n !== 0 && Math.abs(n / d - x) < 1e-9 && Math.gcd ? true : Math.abs(n) < d * 12) {
-      if (Math.abs(x - n/d) < 1e-9) return `${n}/${d}`;
-    }
+    if (n !== 0 && Math.abs(n / d - x) < 1e-9 && Math.abs(n) <= d * 20) return `${n}/${d}`;
   }
-  // Decimal
   return parseFloat(x.toPrecision(10)).toString();
 }
 
-function niceError(msg) {
-  return (msg || 'Error')
-    .replace(/^Error:\s*/i, '')
-    .replace(/Unexpected token .*/i, 'Syntax error')
-    .slice(0, 60);
+// Parse nerdamer solution string "[2,3]" or "[1/2,x+1]"
+function splitSolutions(solStr) {
+  const inner = solStr.replace(/^\[|\]$/g, '').trim();
+  if (!inner) return [];
+  const parts = [];
+  let depth = 0, cur = '';
+  for (const ch of inner) {
+    if ('(['.includes(ch)) depth++;
+    else if (')]'.includes(ch)) depth--;
+    if (ch === ',' && depth === 0) { if (cur.trim()) parts.push(cur.trim()); cur = ''; }
+    else cur += ch;
+  }
+  if (cur.trim()) parts.push(cur.trim());
+  return parts;
 }
 
-/* ======================================================
-   UI helpers
-====================================================== */
-function allLines()  { return [...document.querySelectorAll('#lines .line')]; }
-function first(sel)  { return document.querySelector(sel); }
+function niceError(msg = '') {
+  return msg
+    .replace(/^Error:\s*/i, '')
+    .replace(/Unexpected token.*/i, 'Syntax error')
+    .replace(/Cannot read prop.*/i, 'Syntax error')
+    .slice(0, 70);
+}
 
-function updateNumbers() {
-  allLines().forEach((l, i) => {
-    l.querySelector('.lnum').textContent = i + 1;
-  });
+/* ============================================================
+   UI helpers
+============================================================ */
+function allLines()   { return [...document.querySelectorAll('#lines .line')]; }
+function qs(sel)      { return document.querySelector(sel); }
+
+function renumber() {
+  allLines().forEach((l, i) => { l.querySelector('.lnum').textContent = i + 1; });
 }
 
 function updateStatus() {
   document.getElementById('lineCount').textContent = allLines().length;
 }
 
-function toggleRef() {
-  refOpen = !refOpen;
-  document.getElementById('refBody').style.display  = refOpen ? '' : 'none';
-  document.getElementById('refArrow').textContent   = refOpen ? '▼' : '▶';
+function toggleRef(hdr) {
+  const body  = document.getElementById('refBody');
+  const arrow = hdr.querySelector('span');
+  const open  = body.style.display !== 'none';
+  body.style.display  = open ? 'none' : '';
+  arrow.textContent   = open ? '▶' : '▼';
 }
 
 function insertEx(el) {
@@ -747,13 +767,6 @@ function insertEx(el) {
     if (inp) { inp.value = val; inp.focus(); evaluateAll(); return; }
   }
   addLine(val);
-}
-
-function showToast(msg, ms = 2000) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), ms);
 }
 </script>
 </body>
