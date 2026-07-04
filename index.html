@@ -6,116 +6,107 @@
   <title>Algebra Calculator</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>∑</text></svg>" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mathquill@0.10.1/build/mathquill.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg:       #0d0d1a;
-      --surface:  #13131f;
-      --card:     #1a1a2e;
-      --border:   #252540;
-      --accent:   #7c5cbf;
-      --accent-l: #9b7de8;
-      --text:     #e8e8f0;
-      --dim:      #6b6b8a;
-      --green:    #4fc3a1;
-      --blue:     #79b8ff;
-      --red:      #ff6b8a;
-      --gold:     #e8c36a;
+      --bg:#0d0d1a; --surface:#13131f; --card:#1a1a2e; --border:#252540;
+      --accent:#7c5cbf; --accent-l:#9b7de8; --text:#e8e8f0; --dim:#6b6b8a;
+      --green:#4fc3a1; --blue:#79b8ff; --red:#ff6b8a; --gold:#e8c36a;
     }
     body {
-      background: var(--bg); color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      min-height: 100vh; display: flex; flex-direction: column;
+      background:var(--bg); color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+      min-height:100vh; display:flex; flex-direction:column;
     }
 
     /* ── Header ── */
     header {
-      background: linear-gradient(135deg, #1a1a2e, #0f0f28);
-      border-bottom: 1px solid var(--border);
-      padding: 14px 28px; display: flex; align-items: center; gap: 14px;
-      position: sticky; top: 0; z-index: 10;
+      background:linear-gradient(135deg,#1a1a2e,#0f0f28);
+      border-bottom:1px solid var(--border); padding:14px 28px;
+      display:flex; align-items:center; gap:14px; position:sticky; top:0; z-index:20;
     }
     .logo {
-      width: 42px; height: 42px;
-      background: linear-gradient(135deg, var(--accent), var(--accent-l));
-      border-radius: 11px; display: flex; align-items: center; justify-content: center;
-      font-size: 1.5rem; font-weight: 900; flex-shrink: 0;
+      width:42px; height:42px;
+      background:linear-gradient(135deg,var(--accent),var(--accent-l));
+      border-radius:11px; display:flex; align-items:center; justify-content:center;
+      font-size:1.5rem; font-weight:900; flex-shrink:0;
     }
-    header h1 { font-size: 1.25rem; font-weight: 700; }
-    header p  { font-size: 0.75rem; color: var(--dim); margin-top: 1px; }
-    .header-right { margin-left: auto; display: flex; gap: 8px; }
-    .btn {
-      background: var(--card); border: 1px solid var(--border);
-      color: var(--text); padding: 6px 14px; border-radius: 7px;
-      cursor: pointer; font-size: 0.82rem;
-      transition: background 0.15s, border-color 0.15s; white-space: nowrap;
-    }
-    .btn:hover { background: var(--accent); border-color: var(--accent); }
+    header h1 { font-size:1.25rem; font-weight:700; }
+    header p  { font-size:.75rem; color:var(--dim); margin-top:1px; }
+    .header-right { margin-left:auto; display:flex; gap:8px; align-items:center; }
 
-    /* ── Layout ── */
-    main { max-width: 920px; width: 100%; margin: 28px auto; padding: 0 18px 60px; }
+    .btn {
+      background:var(--card); border:1px solid var(--border); color:var(--text);
+      padding:6px 14px; border-radius:7px; cursor:pointer; font-size:.82rem;
+      transition:background .15s,border-color .15s; white-space:nowrap;
+    }
+    .btn:hover { background:var(--accent); border-color:var(--accent); }
+
+    /* Mode toggle (Real / Complex) */
+    .mode-toggle {
+      display:flex; background:var(--card); border:1px solid var(--border);
+      border-radius:8px; overflow:hidden; font-size:.8rem;
+    }
+    .mode-toggle button {
+      background:none; border:none; color:var(--dim); cursor:pointer;
+      padding:6px 12px; font-size:.8rem; transition:background .15s,color .15s;
+    }
+    .mode-toggle button.active { background:var(--accent); color:#fff; font-weight:600; }
+
+    main { max-width:960px; width:100%; margin:26px auto; padding:0 18px 60px; }
 
     /* ── Calculator card ── */
     .calc-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 14px; overflow: hidden;
-      box-shadow: 0 8px 40px rgba(0,0,0,.4);
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:14px; overflow:hidden; box-shadow:0 8px 40px rgba(0,0,0,.4);
     }
     .calc-titlebar {
-      background: var(--card); padding: 9px 16px;
-      display: flex; align-items: center; gap: 6px;
-      border-bottom: 1px solid var(--border);
+      background:var(--card); padding:9px 16px; display:flex; align-items:center; gap:6px;
+      border-bottom:1px solid var(--border);
     }
-    .dot { width: 11px; height: 11px; border-radius: 50%; }
+    .dot { width:11px; height:11px; border-radius:50%; }
     .dot-r{background:#ff5f57} .dot-y{background:#febc2e} .dot-g{background:#28c840}
-    .calc-fname { margin-left: auto; font-size: .72rem; color: var(--dim); font-family: monospace; }
+    .calc-fname { margin-left:auto; font-size:.72rem; color:var(--dim); font-family:monospace; }
 
-    /* ── Lines ── */
-    .lines { padding: 10px 12px 4px; }
+    .lines { padding:12px 12px 6px; }
     .line {
-      display: flex; align-items: center; gap: 8px;
-      min-height: 46px; padding: 4px 10px;
-      border-radius: 8px; border: 1px solid transparent;
-      margin-bottom: 3px; transition: border-color .12s, background .12s;
+      display:flex; align-items:center; gap:10px; min-height:50px;
+      padding:5px 10px; border-radius:8px; border:1px solid transparent;
+      margin-bottom:4px; transition:border-color .12s,background .12s;
     }
-    .line:focus-within { background: rgba(124,92,191,.07); border-color: var(--accent); }
-    .line.is-error   { border-color: rgba(255,107,138,.4); }
-    .line.is-result  { border-color: rgba(79,195,161,.2); }
-    .line.is-comment { opacity: .5; }
+    .line:focus-within { background:rgba(124,92,191,.07); border-color:var(--accent); }
+    .line.is-error  { border-color:rgba(255,107,138,.4); }
+    .line.is-result { border-color:rgba(79,195,161,.2); }
 
-    .lnum { font-size:.72rem; color:var(--dim); font-family:'Consolas',monospace; min-width:22px; text-align:right; user-select:none; flex-shrink:0; }
+    .lnum { font-size:.72rem; color:var(--dim); font-family:'Consolas',monospace;
+            min-width:22px; text-align:right; user-select:none; flex-shrink:0; }
 
-    /* Input column: text input + live preview below it */
-    .linput-col { flex:1; min-width:0; display:flex; flex-direction:column; justify-content:center; }
-    .linput {
-      width: 100%; background: none; border: none; outline: none;
-      color: var(--text); font-size:.97rem;
-      font-family:'Cascadia Code','Consolas','Courier New',monospace;
-      caret-color: var(--accent-l);
+    /* MathQuill field */
+    .mq-field {
+      flex:1; min-width:0; font-size:1.15rem; color:var(--text);
+      padding:4px 2px; border:none !important; box-shadow:none !important;
     }
-    .linput::placeholder { color: var(--dim); }
-
-    /* Live KaTeX preview of the input expression */
-    .math-preview {
-      display: none; font-size: .82rem; padding: 1px 0; color: var(--dim);
-      overflow-x: auto; white-space: nowrap;
+    .mq-field.mq-editable-field { border:none; }
+    .mq-field .mq-cursor { border-color:var(--accent-l); }
+    .mq-field.mq-focused { box-shadow:none !important; outline:none; }
+    /* placeholder for empty field */
+    .mq-empty::after {
+      content:'expression or equation…'; color:var(--dim);
+      font-family:-apple-system,system-ui,sans-serif; font-size:.9rem;
+      position:absolute; pointer-events:none;
     }
-    .math-preview.show { display: block; }
-    .math-preview .katex { color: var(--dim); }
 
-    .larrow { color: var(--dim); font-size:.85rem; flex-shrink:0; min-width:14px; }
-
-    /* Result — rendered via KaTeX */
+    .larrow { color:var(--dim); font-size:.9rem; flex-shrink:0; min-width:14px; }
     .lresult {
-      text-align: right; max-width: 320px; flex-shrink: 0;
-      font-size: .93rem; word-break: break-word;
-      font-family: 'Cascadia Code','Consolas','Courier New',monospace;
+      text-align:right; max-width:340px; flex-shrink:0; font-size:.95rem;
+      word-break:break-word; font-family:'Cascadia Code','Consolas',monospace;
     }
-    .lresult.num  { color: var(--blue); }
-    .lresult.sym  { color: var(--gold); }
-    .lresult.ok   { color: var(--green); }
-    .lresult.err  { color: var(--red); font-size:.78rem; }
-    .lresult .katex { font-size: 1rem; }
+    .lresult.num { color:var(--blue); }
+    .lresult.sym { color:var(--gold); }
+    .lresult.ok  { color:var(--green); }
+    .lresult.err { color:var(--red); font-size:.78rem; }
+    .lresult .katex { font-size:1.05rem; }
 
     .ldel {
       background:none; border:none; cursor:pointer; color:transparent;
@@ -127,8 +118,8 @@
 
     .add-line {
       width:100%; background:none; border:1.5px dashed var(--border);
-      color:var(--dim); padding:9px 12px; border-radius:8px;
-      cursor:pointer; font-size:.83rem; margin:3px 0 12px;
+      color:var(--dim); padding:9px 12px; border-radius:8px; cursor:pointer;
+      font-size:.83rem; margin:3px 0 12px;
       transition:border-color .15s,color .15s,background .15s;
       display:flex; align-items:center; justify-content:center; gap:6px;
     }
@@ -140,70 +131,76 @@
     }
     .status b { color:var(--text); font-weight:600; }
 
-    /* ── Virtual Keyboard ── */
-    .keyboard-wrap {
-      margin-top: 16px; background: var(--surface);
-      border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+    /* ── Virtual keyboard ── */
+    .kb-wrap {
+      margin-top:16px; background:var(--surface); border:1px solid var(--border);
+      border-radius:14px; overflow:hidden;
     }
-    .keyboard-hdr {
-      background: var(--card); padding: 10px 18px; cursor: pointer;
-      display: flex; justify-content: space-between; align-items: center;
-      font-size: .86rem; font-weight: 600; user-select: none;
-      border-bottom: 1px solid var(--border);
+    .kb-hdr {
+      background:var(--card); padding:10px 18px; cursor:pointer;
+      display:flex; justify-content:space-between; align-items:center;
+      font-size:.86rem; font-weight:600; user-select:none; border-bottom:1px solid var(--border);
     }
-    .keyboard-hdr:hover { background: #1f1f38; }
+    .kb-hdr:hover { background:#1f1f38; }
+    .kb-body { padding:12px 14px; display:flex; flex-direction:column; gap:10px; }
 
-    .keyboard-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
-
-    .kb-row { display: flex; gap: 6px; flex-wrap: wrap; }
-
-    .kb-sep {
-      width: 1px; background: var(--border); margin: 0 4px; flex-shrink: 0;
-    }
+    .kb-section-label { font-size:.62rem; text-transform:uppercase; letter-spacing:.8px; color:var(--dim); margin-bottom:-4px; }
+    .kb-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+    .kb-sep { width:1px; align-self:stretch; background:var(--border); margin:2px 4px; flex-shrink:0; }
 
     .kb {
-      background: var(--card); border: 1px solid var(--border);
-      color: var(--text); border-radius: 7px; cursor: pointer;
-      font-size: .85rem; padding: 7px 0; min-width: 44px; text-align: center;
-      transition: background .12s, border-color .12s; flex-shrink: 0;
-      font-family: 'Cascadia Code','Consolas',monospace; user-select: none;
+      background:var(--card); border:1px solid var(--border); color:var(--text);
+      border-radius:7px; cursor:pointer; font-size:.9rem; padding:8px 0;
+      min-width:42px; text-align:center; transition:background .12s,border-color .12s;
+      flex-shrink:0; user-select:none;
+      font-family:'Cambria Math','Cambria','Times New Roman',serif;
     }
-    .kb:hover  { background: var(--accent); border-color: var(--accent); }
-    .kb:active { filter: brightness(1.2); }
-    .kb.wide  { min-width: 72px; }
-    .kb.fn    { color: var(--accent-l); }
-    .kb.del   { color: var(--red); }
-    .kb.num   { color: var(--blue); }
-    .kb.letter{ color: var(--green); }
-    .kb.op    { color: var(--gold); }
+    .kb:hover  { background:var(--accent); border-color:var(--accent); }
+    .kb:active { filter:brightness(1.25); }
+    .kb.num    { color:var(--blue); }
+    .kb.op     { color:var(--gold); }
+    .kb.fn     { color:var(--accent-l); font-size:.82rem; }
+    .kb.var    { color:var(--green); font-style:italic; }
+    .kb.del    { color:var(--red); }
+    .kb.wide   { min-width:64px; }
+    .kb.special {
+      background:linear-gradient(135deg,var(--accent),var(--accent-l));
+      color:#fff; border-color:transparent; font-weight:600; min-width:auto; padding:8px 16px;
+    }
+    .kb.special:hover { filter:brightness(1.1); }
 
-    /* KaTeX inside keys */
-    .kb .katex { font-size: .85rem; }
-
-    /* ── Reference panel ── */
-    .ref {
-      margin-top: 16px; background: var(--surface);
-      border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+    /* ── Function palette modal ── */
+    .modal-overlay {
+      position:fixed; inset:0; background:rgba(0,0,0,.6); backdrop-filter:blur(3px);
+      display:none; align-items:center; justify-content:center; z-index:50; padding:20px;
     }
-    .ref-hdr {
-      background: var(--card); padding: 11px 18px; cursor: pointer;
-      display: flex; justify-content: space-between; align-items: center;
-      font-size: .86rem; font-weight: 600; user-select: none;
-      border-bottom: 1px solid var(--border);
+    .modal-overlay.show { display:flex; }
+    .modal {
+      background:var(--surface); border:1px solid var(--border); border-radius:16px;
+      max-width:640px; width:100%; max-height:85vh; overflow-y:auto;
+      box-shadow:0 20px 70px rgba(0,0,0,.6);
     }
-    .ref-hdr:hover { background: #1f1f38; }
-    .ref-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); }
-    .ref-cat { padding: 14px 18px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-    .ref-cat:last-child { border-right: none; }
-    .ref-cat h3 { font-size:.65rem; text-transform:uppercase; letter-spacing:.9px; color:var(--accent-l); margin-bottom:9px; }
-    .ex {
-      display:block; background:var(--bg); border-radius:5px;
-      padding:4px 8px; font-size:.8rem;
-      font-family:'Cascadia Code','Consolas',monospace;
-      color:var(--green); margin-bottom:5px; cursor:pointer;
-      transition:background .1s; user-select:none;
+    .modal-hdr {
+      display:flex; justify-content:space-between; align-items:center;
+      padding:16px 22px; border-bottom:1px solid var(--border);
+      position:sticky; top:0; background:var(--surface); z-index:1;
     }
-    .ex:hover { background:rgba(79,195,161,.12); }
+    .modal-hdr h2 { font-size:1.1rem; }
+    .modal-close { background:none; border:none; color:var(--dim); font-size:1.4rem; cursor:pointer; line-height:1; }
+    .modal-close:hover { color:var(--red); }
+    .modal-body { padding:10px 22px 22px; }
+    .pal-cat { margin-top:16px; }
+    .pal-cat h3 { font-size:.66rem; text-transform:uppercase; letter-spacing:.9px; color:var(--accent-l); margin-bottom:10px; }
+    .pal-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; }
+    .pal-item {
+      background:var(--card); border:1px solid var(--border); border-radius:9px;
+      padding:10px 12px; cursor:pointer; display:flex; flex-direction:column; gap:2px;
+      transition:background .12s,border-color .12s;
+    }
+    .pal-item:hover { background:var(--accent); border-color:var(--accent); }
+    .pal-item .pal-sym { font-size:1.05rem; font-family:'Cambria Math',serif; }
+    .pal-item .pal-name { font-size:.68rem; color:var(--dim); }
+    .pal-item:hover .pal-name { color:#eee; }
 
     #toast {
       position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
@@ -211,6 +208,8 @@
       font-size:.85rem; opacity:0; transition:opacity .3s; pointer-events:none; z-index:100;
     }
     #toast.show { opacity:1; }
+
+    @media (max-width:600px){ .lresult{ max-width:150px; } }
   </style>
 </head>
 <body>
@@ -219,9 +218,13 @@
   <div class="logo">∑</div>
   <div>
     <h1>Algebra Calculator</h1>
-    <p>Symbolic · exact answers · multi-line</p>
+    <p>Live math input · exact answers · multi-line</p>
   </div>
   <div class="header-right">
+    <div class="mode-toggle" title="Real mode: i is a variable, √(−1) is undefined. Complex mode: i is the imaginary unit.">
+      <button id="modeReal" class="active" onclick="setComplex(false)">ℝ Real</button>
+      <button id="modeComplex" onclick="setComplex(true)">ℂ Complex</button>
+    </div>
     <button class="btn" onclick="loadExamples()">Examples</button>
     <button class="btn" onclick="clearAll()">Clear</button>
   </div>
@@ -236,137 +239,102 @@
     <div class="lines" id="lines"></div>
     <div class="status">
       <span>Lines: <b id="lineCount">0</b></span>
-      <span><b>Enter</b> new line &nbsp;·&nbsp; <b>↑↓</b> navigate &nbsp;·&nbsp; <b>Backspace</b> on empty → delete</span>
+      <span>Mode: <b id="modeLabel">Real</b></span>
+      <span><b>Enter</b> new line · <b>↑↓</b> navigate · type <b>/</b> for fraction, <b>^</b> for power, <b>sqrt</b> for √</span>
     </div>
   </div>
 
-  <!-- ── Virtual Keyboard ── -->
-  <div class="keyboard-wrap">
-    <div class="keyboard-hdr" onclick="toggleKb(this)">
-      ⌨️ Keyboard — click a button, then type in any line <span>▼</span>
-    </div>
-    <div class="keyboard-body" id="kbBody">
+  <!-- ── Virtual keyboard ── -->
+  <div class="kb-wrap">
+    <div class="kb-hdr" onclick="toggleKb(this)">⌨️ Keyboard <span>▼</span></div>
+    <div class="kb-body" id="kbBody">
 
-      <!-- Row 1: Trig + common functions -->
+      <div class="kb-section-label">Numbers &amp; operators</div>
       <div class="kb-row">
-        <button class="kb fn" onclick="kbFn('sin(',')')">sin</button>
-        <button class="kb fn" onclick="kbFn('cos(',')')">cos</button>
-        <button class="kb fn" onclick="kbFn('tan(',')')">tan</button>
-        <button class="kb fn" onclick="kbFn('asin(',')')">sin⁻¹</button>
-        <button class="kb fn" onclick="kbFn('acos(',')')">cos⁻¹</button>
-        <button class="kb fn" onclick="kbFn('atan(',')')">tan⁻¹</button>
+        <button class="kb num" onclick="K.type('7')">7</button>
+        <button class="kb num" onclick="K.type('8')">8</button>
+        <button class="kb num" onclick="K.type('9')">9</button>
+        <button class="kb op"  onclick="K.type('+')">+</button>
+        <button class="kb op"  onclick="K.type('-')">−</button>
         <div class="kb-sep"></div>
-        <button class="kb fn" onclick="kbFn('log(',')')">log</button>
-        <button class="kb fn" onclick="kbFn('log(','e)')">ln</button>
-        <button class="kb fn" onclick="kbFn('sqrt(',')')">√</button>
-        <button class="kb fn" onclick="kbFn('abs(',')')">|x|</button>
-        <button class="kb fn" onclick="kbFn('factorial(',')')">n!</button>
+        <button class="kb num" onclick="K.type('4')">4</button>
+        <button class="kb num" onclick="K.type('5')">5</button>
+        <button class="kb num" onclick="K.type('6')">6</button>
+        <button class="kb op"  onclick="K.type('*')">×</button>
+        <button class="kb op"  onclick="K.type('/')">÷</button>
         <div class="kb-sep"></div>
-        <button class="kb del" onclick="kbDelete()">⌫</button>
+        <button class="kb num" onclick="K.type('1')">1</button>
+        <button class="kb num" onclick="K.type('2')">2</button>
+        <button class="kb num" onclick="K.type('3')">3</button>
+        <button class="kb op"  onclick="K.type('(')">(</button>
+        <button class="kb op"  onclick="K.type(')')">)</button>
+        <div class="kb-sep"></div>
+        <button class="kb num" onclick="K.type('0')">0</button>
+        <button class="kb num" onclick="K.type('.')">.</button>
+        <button class="kb op"  onclick="K.type('=')">=</button>
+        <button class="kb del" onclick="K.backspace()">⌫</button>
       </div>
 
-      <!-- Row 2: Symbols + letters -->
+      <div class="kb-section-label">Powers, roots &amp; fractions</div>
       <div class="kb-row">
-        <button class="kb op" onclick="kbInsert('pi')">π</button>
-        <button class="kb op" onclick="kbInsert('e')">e</button>
-        <button class="kb op" onclick="kbInsert('^')">^</button>
-        <button class="kb op" onclick="kbInsert('^2')">x²</button>
-        <button class="kb op" onclick="kbInsert('^3')">x³</button>
-        <button class="kb op" onclick="kbInsert('(1/',')')">1/x</button>
-        <div class="kb-sep"></div>
-        <button class="kb op" onclick="kbInsert('(')"> ( </button>
-        <button class="kb op" onclick="kbInsert(')')"> ) </button>
-        <button class="kb op" onclick="kbInsert('=')">=</button>
-        <div class="kb-sep"></div>
-        <button class="kb letter" onclick="kbInsert('x')">x</button>
-        <button class="kb letter" onclick="kbInsert('y')">y</button>
-        <button class="kb letter" onclick="kbInsert('z')">z</button>
-        <button class="kb letter" onclick="kbInsert('a')">a</button>
-        <button class="kb letter" onclick="kbInsert('b')">b</button>
-        <button class="kb letter" onclick="kbInsert('n')">n</button>
-        <button class="kb letter" onclick="kbInsert('t')">t</button>
-        <button class="kb letter" onclick="kbInsert('k')">k</button>
+        <button class="kb op" onclick="K.cmd('^')">xʸ</button>
+        <button class="kb op" onclick="K.pow2()">x²</button>
+        <button class="kb op" onclick="K.cmd('\\sqrt')">√</button>
+        <button class="kb op" onclick="K.nthroot()">ⁿ√</button>
+        <button class="kb op" onclick="K.cmd('\\frac')">a/b</button>
+        <button class="kb op" onclick="K.type('pi')">π</button>
+        <button class="kb op" onclick="K.type('e')">e</button>
+        <button class="kb op" onclick="K.abs()">|x|</button>
       </div>
 
-      <!-- Row 3: Numbers + operators -->
+      <div class="kb-section-label">Functions</div>
       <div class="kb-row">
-        <button class="kb num" onclick="kbInsert('7')">7</button>
-        <button class="kb num" onclick="kbInsert('8')">8</button>
-        <button class="kb num" onclick="kbInsert('9')">9</button>
+        <button class="kb fn" onclick="K.fn('sin')">sin</button>
+        <button class="kb fn" onclick="K.fn('cos')">cos</button>
+        <button class="kb fn" onclick="K.fn('tan')">tan</button>
+        <button class="kb fn" onclick="K.fn('ln')">ln</button>
+        <button class="kb fn" onclick="K.log10()">log</button>
+        <button class="kb fn" onclick="K.logBase()">log_b</button>
+        <button class="kb fn" onclick="K.type('factorial(')">n!</button>
         <div class="kb-sep"></div>
-        <button class="kb op" onclick="kbInsert('+')">+</button>
-        <button class="kb op" onclick="kbInsert('-')">−</button>
-        <button class="kb op" onclick="kbInsert('*')">×</button>
-        <button class="kb op" onclick="kbInsert('/')">÷</button>
-        <div class="kb-sep"></div>
-        <button class="kb num" onclick="kbInsert('4')">4</button>
-        <button class="kb num" onclick="kbInsert('5')">5</button>
-        <button class="kb num" onclick="kbInsert('6')">6</button>
-        <div class="kb-sep"></div>
-        <button class="kb num" onclick="kbInsert('1')">1</button>
-        <button class="kb num" onclick="kbInsert('2')">2</button>
-        <button class="kb num" onclick="kbInsert('3')">3</button>
-        <div class="kb-sep"></div>
-        <button class="kb num" onclick="kbInsert('0')">0</button>
-        <button class="kb op" onclick="kbInsert('.')"> . </button>
+        <button class="kb special" onclick="openPalette()">∑ &nbsp;More functions…</button>
       </div>
 
-    </div>
-  </div>
+      <div class="kb-section-label">Variables</div>
+      <div class="kb-row">
+        <button class="kb var" onclick="K.type('x')">x</button>
+        <button class="kb var" onclick="K.type('y')">y</button>
+        <button class="kb var" onclick="K.type('z')">z</button>
+        <button class="kb var" onclick="K.type('a')">a</button>
+        <button class="kb var" onclick="K.type('b')">b</button>
+        <button class="kb var" onclick="K.type('c')">c</button>
+        <button class="kb var" onclick="K.type('k')">k</button>
+        <button class="kb var" onclick="K.type('m')">m</button>
+        <button class="kb var" onclick="K.type('n')">n</button>
+        <button class="kb var" onclick="K.type('r')">r</button>
+        <button class="kb var" onclick="K.type('t')">t</button>
+        <button class="kb var" onclick="K.cmd('\\theta')">θ</button>
+      </div>
 
-  <!-- ── Reference panel ── -->
-  <div class="ref">
-    <div class="ref-hdr" onclick="toggleRef(this)">
-      📖 Quick Reference — click to insert &nbsp;<span>▼</span>
-    </div>
-    <div class="ref-body" id="refBody">
-      <div class="ref-cat">
-        <h3>Arithmetic</h3>
-        <code class="ex" onclick="insertEx(this)">2 ^ 10</code>
-        <code class="ex" onclick="insertEx(this)">sqrt(144)</code>
-        <code class="ex" onclick="insertEx(this)">factorial(8)</code>
-        <code class="ex" onclick="insertEx(this)">abs(-7)</code>
-        <code class="ex" onclick="insertEx(this)">mod(17, 5)</code>
-      </div>
-      <div class="ref-cat">
-        <h3>Variables</h3>
-        <code class="ex" onclick="insertEx(this)">x = 5</code>
-        <code class="ex" onclick="insertEx(this)">y = x^2 + 1</code>
-        <code class="ex" onclick="insertEx(this)">r = 7</code>
-        <code class="ex" onclick="insertEx(this)">pi * r^2</code>
-      </div>
-      <div class="ref-cat">
-        <h3>Equations</h3>
-        <code class="ex" onclick="insertEx(this)">2x + 3 = 7</code>
-        <code class="ex" onclick="insertEx(this)">x^2 - 5x + 6 = 0</code>
-        <code class="ex" onclick="insertEx(this)">3x - 2 = x + 8</code>
-        <code class="ex" onclick="insertEx(this)">x^3 - x = 0</code>
-      </div>
-      <div class="ref-cat">
-        <h3>Trig / Math</h3>
-        <code class="ex" onclick="insertEx(this)">sin(pi / 4)</code>
-        <code class="ex" onclick="insertEx(this)">cos(pi / 3)</code>
-        <code class="ex" onclick="insertEx(this)">log(1000, 10)</code>
-        <code class="ex" onclick="insertEx(this)">round(pi, 6)</code>
-      </div>
-      <div class="ref-cat">
-        <h3>Symbolic</h3>
-        <code class="ex" onclick="insertEx(this)">expand("(x+1)^3")</code>
-        <code class="ex" onclick="insertEx(this)">factor("x^2-4")</code>
-        <code class="ex" onclick="insertEx(this)">simplify("2x+3x")</code>
-      </div>
-      <div class="ref-cat">
-        <h3>Calculus</h3>
-        <code class="ex" onclick="insertEx(this)">derivative("x^3+2x", "x")</code>
-        <code class="ex" onclick="insertEx(this)">derivative("sin(x)", "x")</code>
-        <code class="ex" onclick="insertEx(this)">integrate("x^2", "x")</code>
-      </div>
     </div>
   </div>
 </main>
 
+<!-- ── Function palette modal ── -->
+<div class="modal-overlay" id="palette" onclick="if(event.target===this)closePalette()">
+  <div class="modal">
+    <div class="modal-hdr">
+      <h2>∑ Function Palette</h2>
+      <button class="modal-close" onclick="closePalette()">✕</button>
+    </div>
+    <div class="modal-body" id="paletteBody"><!-- filled by JS --></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mathquill@0.10.1/build/mathquill.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/nerdamer.core.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/Algebra.js"></script>
@@ -378,222 +346,256 @@
 /* ============================================================
    Globals
 ============================================================ */
-let numScope  = {};
-let varNames  = new Set();
-let lastFocus = null;    // last focused .line div
-let activeInput = null;  // last focused text input (for keyboard)
+const MQ = MathQuill.getInterface(2);
+const IVAR = 'ii_reserved';           // stand-in for `i` when in Real mode
+let complexMode = false;
+let numScope = {}, varNames = new Set();
+let activeMQ = null, activeLine = null;
+
+const MQ_CONFIG = {
+  spaceBehavesLikeTab: true,
+  autoCommands: 'pi tau theta alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma phi chi psi omega sqrt sum prod int infty',
+  autoOperatorNames: 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh ln log exp abs sign floor ceil round gcd lcm mod det factor expand simplify factorial',
+  handlers: {
+    edit: mq => { onFocusField(mq); scheduleEval(); },
+    enter: mq => enterFrom(mq),
+    upOutOf: mq => moveVert(mq, -1),
+    downOutOf: mq => moveVert(mq, +1),
+    deleteOutOf: (dir, mq) => { if (dir === MQ.L) backspaceEmpty(mq); },
+  },
+};
 
 /* ============================================================
    Boot
 ============================================================ */
 document.addEventListener('DOMContentLoaded', () => {
+  buildPalette();
   for (let i = 0; i < 3; i++) addLine('', false);
-  qs('.linput').focus();
+  const f = document.querySelector('.mq-field');
+  if (f && f.__mq) f.__mq.focus();
 });
 
 /* ============================================================
    Line management
 ============================================================ */
-function addLine(value = '', doFocus = true) {
-  const container = qs('#lines');
-  const addBtn    = container.querySelector('.add-line');
-  if (addBtn) addBtn.remove();
+function addLine(latex = '', focus = true) {
+  const container = document.getElementById('lines');
+  const oldAdd = container.querySelector('.add-line');
+  if (oldAdd) oldAdd.remove();
 
   const div = document.createElement('div');
   div.className = 'line';
   div.innerHTML = `
     <span class="lnum">?</span>
-    <div class="linput-col">
-      <input class="linput" type="text" autocomplete="off" autocorrect="off"
-             spellcheck="false" placeholder="expression or equation…" />
-      <div class="math-preview"></div>
-    </div>
+    <span class="mq-field"></span>
     <span class="larrow"></span>
     <div class="lresult"></div>
     <button class="ldel" tabindex="-1" title="Remove">✕</button>`;
   container.appendChild(div);
 
-  const btn = document.createElement('button');
-  btn.className = 'add-line';
-  btn.innerHTML = '＋ &nbsp;Add line';
-  btn.onclick = () => addLine();
-  container.appendChild(btn);
+  const addBtn = document.createElement('button');
+  addBtn.className = 'add-line';
+  addBtn.innerHTML = '＋ &nbsp;Add line';
+  addBtn.onclick = () => addLine();
+  container.appendChild(addBtn);
 
-  const input = div.querySelector('.linput');
-  if (value) input.value = value;
+  const fieldEl = div.querySelector('.mq-field');
+  const mq = MQ.MathField(fieldEl, MQ_CONFIG);
+  fieldEl.__mq = mq;
+  div._mq = mq;
+  if (latex) mq.latex(latex);
 
-  input.addEventListener('input',   () => { evaluateAll(); });
-  input.addEventListener('keydown', onKeydown);
-  input.addEventListener('focus',   () => { lastFocus = div; activeInput = input; });
-
+  fieldEl.addEventListener('focusin', () => onFocusField(mq));
+  fieldEl.addEventListener('mousedown', () => onFocusField(mq));
   div.querySelector('.ldel').addEventListener('click', () => deleteLine(div));
 
   renumber(); evaluateAll(); updateStatus();
-  if (doFocus) setTimeout(() => input.focus(), 0);
+  if (focus) setTimeout(() => mq.focus(), 0);
   return div;
+}
+
+function onFocusField(mq) {
+  activeMQ = mq;
+  activeLine = mq.el().closest('.line');
 }
 
 function deleteLine(line) {
   const lines = allLines();
-  if (lines.length <= 1) { line.querySelector('.linput').value = ''; evaluateAll(); return; }
-  const idx  = lines.indexOf(line);
+  if (lines.length <= 1) { line._mq.latex(''); evaluateAll(); return; }
+  const idx = lines.indexOf(line);
   const prev = lines[Math.max(0, idx - 1)];
   line.remove();
   renumber(); evaluateAll(); updateStatus();
-  prev.querySelector('.linput').focus();
+  prev._mq.focus();
 }
 
 function clearAll() {
-  qs('#lines').innerHTML = '';
+  document.getElementById('lines').innerHTML = '';
   addLine('', false);
-  qs('.linput').focus();
+  setTimeout(() => document.querySelector('.mq-field').__mq.focus(), 0);
 }
 
 function loadExamples() {
-  qs('#lines').innerHTML = '';
-  [
-    '# ── Arithmetic ──────────────',
-    '2 ^ 10',
-    'sqrt(2) + pi',
-    'factorial(10)',
-    '',
-    '# ── Variables ───────────────',
-    'r = 6',
-    'pi * r^2',
-    '',
-    '# ── Equations (exact) ───────',
-    'x^2 - 5x + 6 = 0',
-    '3x - 2 = x + 8',
-    '',
-    '# ── Symbolic ────────────────',
-    'factor("x^2-9")',
-    'expand("(x+2)^3")',
-    '',
-    '# ── Calculus ────────────────',
-    'derivative("x^4 - 3x^2 + 1", "x")',
-    'integrate("x^3", "x")',
-  ].forEach(v => addLine(v, false));
+  document.getElementById('lines').innerHTML = '';
+  ['2^{10}', '\\sqrt{2}+\\pi', 'r=6', '\\pi r^2',
+   'x^2-5x+6=0', '3x-2=x+8',
+   '\\frac{d}{dx}\\left(x^3+2x\\right)', 'factor\\left(x^2-9\\right)']
+    .forEach(l => addLine(l, false));
+  setTimeout(() => { evaluateAll(); }, 0);
+}
+
+/* ── inter-field navigation ── */
+function enterFrom(mq) {
+  const lines = allLines();
+  const idx = lines.findIndex(l => l._mq === mq);
+  if (idx === lines.length - 1) addLine();
+  else lines[idx + 1]._mq.focus();
+}
+function moveVert(mq, dir) {
+  const lines = allLines();
+  const idx = lines.findIndex(l => l._mq === mq);
+  const t = idx + dir;
+  if (t >= 0 && t < lines.length) lines[t]._mq.focus();
+  else if (dir > 0) addLine();
+}
+function backspaceEmpty(mq) {
+  const lines = allLines();
+  if (lines.length <= 1) return;
+  const idx = lines.findIndex(l => l._mq === mq);
+  if (mq.latex().trim() === '') deleteLine(lines[idx]);
+}
+
+/* ============================================================
+   Virtual keyboard actions
+============================================================ */
+const K = {
+  ensure() { if (!activeMQ) { const f = document.querySelector('.mq-field'); if (f) activeMQ = f.__mq; } return activeMQ; },
+  type(t)  { const mq = this.ensure(); if (mq) { mq.typedText(t); mq.focus(); scheduleEval(); } },
+  cmd(c)   { const mq = this.ensure(); if (mq) { mq.cmd(c); mq.focus(); scheduleEval(); } },
+  write(l) { const mq = this.ensure(); if (mq) { mq.write(l); mq.focus(); scheduleEval(); } },
+  backspace(){ const mq = this.ensure(); if (mq) { mq.keystroke('Backspace'); mq.focus(); scheduleEval(); } },
+  pow2()   { const mq = this.ensure(); if (mq) { mq.cmd('^'); mq.typedText('2'); mq.keystroke('Right'); mq.focus(); scheduleEval(); } },
+  fn(name) { this.type(name + '('); },
+  log10()  { this.type('log('); },                 // base-10 log (default)
+  logBase(){ const mq = this.ensure(); if (mq) { mq.typedText('log'); mq.cmd('_'); mq.focus(); scheduleEval(); } },
+  abs()    { const mq = this.ensure(); if (mq) { mq.cmd('|'); mq.focus(); scheduleEval(); } },
+  nthroot(){ const mq = this.ensure(); if (mq) { mq.cmd('\\nthroot'); mq.focus(); scheduleEval(); } },
+};
+
+/* ============================================================
+   Function palette
+============================================================ */
+const PALETTE = {
+  'Calculus': [
+    { sym: 'd/dx', name: 'Derivative', act: () => K.write('\\frac{d}{dx}\\left(\\right)') },
+    { sym: '∫ dx', name: 'Integral',   act: () => K.write('\\int\\left(\\right)dx') },
+    { sym: '∫ᵇₐ',  name: 'Definite integral', act: () => K.write('\\int_{0}^{1}\\left(\\right)dx') },
+    { sym: 'Σ',    name: 'Summation',  act: () => K.write('\\sum_{n=1}^{10}\\left(\\right)') },
+    { sym: 'lim',  name: 'Limit',      act: () => K.write('\\lim_{x\\to0}') },
+  ],
+  'Algebra': [
+    { sym: 'factor',   name: 'Factor',   act: () => K.type('factor(') },
+    { sym: 'expand',   name: 'Expand',   act: () => K.type('expand(') },
+    { sym: 'simplify', name: 'Simplify', act: () => K.type('simplify(') },
+    { sym: 'gcd',      name: 'GCD',      act: () => K.type('gcd(') },
+    { sym: 'lcm',      name: 'LCM',      act: () => K.type('lcm(') },
+    { sym: 'mod',      name: 'Modulo',   act: () => K.type('mod(') },
+  ],
+  'Trigonometry': [
+    { sym: 'sin', name: 'sine', act: () => K.fn('sin') },
+    { sym: 'cos', name: 'cosine', act: () => K.fn('cos') },
+    { sym: 'tan', name: 'tangent', act: () => K.fn('tan') },
+    { sym: 'sin⁻¹', name: 'arcsin', act: () => K.fn('arcsin') },
+    { sym: 'cos⁻¹', name: 'arccos', act: () => K.fn('arccos') },
+    { sym: 'tan⁻¹', name: 'arctan', act: () => K.fn('arctan') },
+    { sym: 'sinh', name: 'hyperbolic sine', act: () => K.fn('sinh') },
+    { sym: 'cosh', name: 'hyperbolic cosine', act: () => K.fn('cosh') },
+    { sym: 'tanh', name: 'hyperbolic tangent', act: () => K.fn('tanh') },
+  ],
+  'Greek letters': [
+    { sym: 'π', name: 'pi', act: () => K.cmd('\\pi') },
+    { sym: 'θ', name: 'theta', act: () => K.cmd('\\theta') },
+    { sym: 'α', name: 'alpha', act: () => K.cmd('\\alpha') },
+    { sym: 'β', name: 'beta', act: () => K.cmd('\\beta') },
+    { sym: 'γ', name: 'gamma', act: () => K.cmd('\\gamma') },
+    { sym: 'δ', name: 'delta', act: () => K.cmd('\\delta') },
+    { sym: 'λ', name: 'lambda', act: () => K.cmd('\\lambda') },
+    { sym: 'μ', name: 'mu', act: () => K.cmd('\\mu') },
+    { sym: 'σ', name: 'sigma', act: () => K.cmd('\\sigma') },
+    { sym: 'ω', name: 'omega', act: () => K.cmd('\\omega') },
+  ],
+  'Constants': [
+    { sym: 'π', name: 'pi ≈ 3.14159', act: () => K.type('pi') },
+    { sym: 'e', name: 'Euler ≈ 2.71828', act: () => K.type('e') },
+    { sym: '∞', name: 'infinity', act: () => K.cmd('\\infty') },
+    { sym: 'i', name: 'imaginary unit', act: () => K.type('i') },
+  ],
+};
+
+function buildPalette() {
+  const body = document.getElementById('paletteBody');
+  body.innerHTML = '';
+  for (const [cat, items] of Object.entries(PALETTE)) {
+    const wrap = document.createElement('div');
+    wrap.className = 'pal-cat';
+    wrap.innerHTML = `<h3>${cat}</h3>`;
+    const grid = document.createElement('div');
+    grid.className = 'pal-grid';
+    items.forEach((it, idx) => {
+      const el = document.createElement('div');
+      el.className = 'pal-item';
+      el.innerHTML = `<span class="pal-sym">${it.sym}</span><span class="pal-name">${it.name}</span>`;
+      el.onclick = () => { it.act(); closePalette(); };
+      grid.appendChild(el);
+    });
+    wrap.appendChild(grid);
+    body.appendChild(wrap);
+  }
+}
+function openPalette()  { document.getElementById('palette').classList.add('show'); }
+function closePalette() { document.getElementById('palette').classList.remove('show'); if (activeMQ) activeMQ.focus(); }
+
+/* ============================================================
+   Evaluation
+============================================================ */
+let evalTimer = null;
+function scheduleEval() { clearTimeout(evalTimer); evalTimer = setTimeout(evaluateAll, 90); }
+
+function setComplex(on) {
+  complexMode = on;
+  document.getElementById('modeReal').classList.toggle('active', !on);
+  document.getElementById('modeComplex').classList.toggle('active', on);
+  document.getElementById('modeLabel').textContent = on ? 'Complex' : 'Real';
   evaluateAll();
 }
 
-/* ============================================================
-   Keyboard nav
-============================================================ */
-function onKeydown(e) {
-  const input = e.target;
-  const line  = input.closest('.line');
-  const lines = allLines();
-  const idx   = lines.indexOf(line);
-
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    if (idx === lines.length - 1) addLine();
-    else lines[idx + 1].querySelector('.linput').focus();
-  } else if (e.key === 'ArrowUp' && idx > 0) {
-    e.preventDefault();
-    lines[idx - 1].querySelector('.linput').focus();
-  } else if (e.key === 'ArrowDown') {
-    e.preventDefault();
-    if (idx < lines.length - 1) lines[idx + 1].querySelector('.linput').focus();
-    else addLine();
-  } else if (e.key === 'Backspace' && input.value === '' && lines.length > 1) {
-    e.preventDefault();
-    deleteLine(line);
-  }
-}
-
-/* ============================================================
-   Virtual keyboard helpers
-============================================================ */
-function kbInsert(text, moveCursorLeft = 0) {
-  const inp = activeInput;
-  if (!inp) return;
-  const s = inp.selectionStart ?? inp.value.length;
-  const e = inp.selectionEnd   ?? inp.value.length;
-  inp.value = inp.value.slice(0, s) + text + inp.value.slice(e);
-  const pos = s + text.length - moveCursorLeft;
-  inp.setSelectionRange(pos, pos);
-  inp.focus();
-  inp.dispatchEvent(new Event('input'));
-}
-
-/* Insert a function call: prefix + cursor + suffix  e.g. sin( | ) */
-function kbFn(prefix, suffix) {
-  kbInsert(prefix + suffix, suffix.length);
-}
-
-function kbDelete() {
-  const inp = activeInput;
-  if (!inp) return;
-  const s = inp.selectionStart;
-  const e = inp.selectionEnd;
-  if (s === e && s > 0) {
-    inp.value = inp.value.slice(0, s - 1) + inp.value.slice(e);
-    inp.setSelectionRange(s - 1, s - 1);
-  } else if (s !== e) {
-    inp.value = inp.value.slice(0, s) + inp.value.slice(e);
-    inp.setSelectionRange(s, s);
-  }
-  inp.focus();
-  inp.dispatchEvent(new Event('input'));
-}
-
-/* ============================================================
-   Evaluate all lines — full reset each pass
-============================================================ */
 function evaluateAll() {
-  nerdamer.clearVars();
-  numScope = {};
-  varNames = new Set();
+  try { nerdamer.clearVars(); } catch {}
+  numScope = {}; varNames = new Set();
 
   allLines().forEach(line => {
-    const input   = line.querySelector('.linput');
-    const preview = line.querySelector('.math-preview');
-    const arrow   = line.querySelector('.larrow');
-    const result  = line.querySelector('.lresult');
-    const raw     = input.value.trim();
+    const mq = line._mq;
+    const latex = mq ? mq.latex() : '';
+    const arrow = line.querySelector('.larrow');
+    const result = line.querySelector('.lresult');
 
-    line.className     = 'line';
-    arrow.textContent  = '';
+    line.classList.remove('is-error', 'is-result');
+    arrow.textContent = '';
     result.textContent = '';
-    result.className   = 'lresult';
-    preview.className  = 'math-preview';
-    preview.innerHTML  = '';
+    result.className = 'lresult';
 
-    if (!raw) return;
+    if (!latex || !latex.trim()) return;
 
-    // Comments
-    if (raw.startsWith('#') || raw.startsWith('//')) {
-      line.classList.add('is-comment'); return;
-    }
-
-    // Live input preview (KaTeX rendering of what you're typing)
-    const previewTex = inputToTeX(raw);
-    if (previewTex) {
-      try {
-        preview.innerHTML = katex.renderToString(previewTex, { throwOnError: false, displayMode: false });
-        preview.classList.add('show');
-      } catch (_) {}
-    }
-
-    // Evaluate
     try {
-      const { tex, text, cls } = evalLine(raw);
-      if (text !== null && text !== undefined) {
+      const out = evalLatex(latex);
+      if (out && out.text != null) {
         arrow.textContent = '→';
-        if (cls) result.classList.add(cls);
-        line.classList.add(cls === 'err' ? 'is-error' : 'is-result');
-
-        if (tex && cls !== 'err') {
-          try {
-            result.innerHTML = katex.renderToString(tex, { throwOnError: false, displayMode: false });
-          } catch (_) { result.textContent = text; }
-        } else {
-          result.textContent = text;
-        }
+        if (out.cls) result.classList.add(out.cls);
+        line.classList.add(out.cls === 'err' ? 'is-error' : 'is-result');
+        renderResult(result, out);
       }
     } catch (err) {
-      arrow.textContent  = '→';
+      arrow.textContent = '→';
       result.textContent = niceError(err.message);
       result.classList.add('err');
       line.classList.add('is-error');
@@ -601,356 +603,525 @@ function evaluateAll() {
   });
 }
 
-/* ============================================================
-   Convert raw input to LaTeX for the live preview
-============================================================ */
-function inputToTeX(raw) {
-  if (!raw || raw.startsWith('#') || raw.startsWith('//')) return null;
-  // Skip command strings — they don't parse nicely
-  if (/^(derivative|diff|integrate|simplify|expand|factor)\s*\(/i.test(raw)) return null;
-
-  try {
-    const eqM = raw.match(/(?<![=!<>])=(?!=)/);
-    if (eqM) {
-      const lhsTex = math.parse(preprocess(raw.slice(0, eqM.index).trim())).toTex();
-      const rhsTex = math.parse(preprocess(raw.slice(eqM.index + 1).trim())).toTex();
-      return `${lhsTex} = ${rhsTex}`;
-    }
-    return math.parse(preprocess(raw)).toTex();
-  } catch { return null; }
+function renderResult(el, out) {
+  if (out.tex && out.cls !== 'err') {
+    try { el.innerHTML = katex.renderToString(out.tex, { throwOnError: false }); return; }
+    catch {}
+  }
+  el.textContent = out.text;
 }
 
-/* ============================================================
-   Core evaluator
-============================================================ */
-function evalLine(raw) {
-  if (/^(diff|derivative)\s*\(/i.test(raw))  return cmdDerivative(raw);
-  if (/^integrat[e]?\s*\(/i.test(raw))       return cmdIntegral(raw);
-  if (/^simplify\s*\(/i.test(raw))           return cmdSimplify(raw);
-  if (/^expand\s*\(/i.test(raw))             return cmdExpand(raw);
-  if (/^factor\s*\(/i.test(raw))             return cmdFactor(raw);
+/* Keep nerdamer in exact-symbolic mode (some ops flip PARSE2NUMBER on) */
+function nerdExact() { try { nerdamer.getCore().Settings.PARSE2NUMBER = false; } catch {} }
 
-  const asgn = raw.match(/^([a-zA-Z_]\w*)\s*=(?!=)\s*(.+)$/);
-  if (asgn) return handleAssignment(asgn[1], asgn[2].trim());
+/* ── Route a line by its LaTeX ── */
+function evalLatex(latex) {
+  nerdExact();
+  // High-level notation detection (before generic conversion)
+  if (/\\frac\{d\}\{d/.test(latex))  return evalDerivative(latex);
+  if (/\\int/.test(latex))           return evalIntegral(latex);
+  if (/\\sum/.test(latex))           return evalSum(latex);
+  if (/\\lim/.test(latex))           return { text: 'Limits not supported yet', cls: 'err' };
 
-  if (/(?<![=!<>])=(?!=)/.test(raw)) return handleEquation(raw);
-
-  return handleExpression(raw);
+  const expr = latexToExpr(latex, complexMode);
+  if (!expr.trim()) return null;
+  return evalExpr(expr);
 }
 
-/* ============================================================
-   Assignment
-============================================================ */
-function handleAssignment(name, rhs) {
+/* ── Evaluate a converted expression ── */
+function evalExpr(expr) {
+  // Symbolic word-commands: factor(...), expand(...), simplify(...)
+  const cmd = expr.match(/^(factor|expand|simplify)\((.*)\)$/s);
+  if (cmd) return symbolicCmd(cmd[1], cmd[2]);
+
+  // Assignment:  <name> = <value>
+  const asgn = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
+  if (asgn && !/[+\-*/^]/.test(asgn[1])) return assign(asgn[1], asgn[2]);
+
+  // Equation
+  if (/(?<![=!<>])=(?!=)/.test(expr)) return solveEquation(expr);
+
+  // Plain expression
+  return plainExpr(expr);
+}
+
+function assign(name, rhs) {
   try {
     const val = math.evaluate(rhs, numScope);
     if (typeof val === 'number' && isFinite(val)) {
       numScope[name] = val; varNames.add(name);
-      nerdamer.setVar(name, String(val));
-      const tex = fmtNumTeX(val);
-      return { tex, text: fmtNum(val), cls: 'num' };
+      try { nerdamer.setVar(name, String(val)); } catch {}
+      return { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
     }
-    const text = fmtMathResult(val);
+    if (val && val.isComplex) {
+      if (!complexMode && Math.abs(val.im) > 1e-12)
+        return { text: 'undefined (not real)', cls: 'err' };
+      numScope[name] = val; varNames.add(name);
+      return { text: fmtMath(val), cls: null };
+    }
     numScope[name] = val; varNames.add(name);
-    return { tex: null, text, cls: null };
-  } catch (_) {}
-
+    return { text: fmtMath(val), cls: null };
+  } catch {}
   try {
-    const sym = nerdamer(rhs); const str = sym.toString();
-    nerdamer.setVar(name, str); varNames.add(name);
-    return { tex: tryTeX(sym), text: str, cls: 'sym' };
-  } catch (e) { throw new Error(`Cannot evaluate: ${rhs}`); }
+    const s = nerdamer(rhs); const str = s.toString();
+    try { nerdamer.setVar(name, str); } catch {}
+    varNames.add(name);
+    return { tex: safeTeX(s), text: disp(str), cls: 'sym' };
+  } catch { throw new Error('Cannot evaluate'); }
 }
 
-/* ============================================================
-   Equation solving
-============================================================ */
-function handleEquation(raw) {
-  const eqM = raw.match(/(?<![=!<>])=(?!=)/);
-  if (!eqM) throw new Error('Invalid equation');
-
-  const lhs = raw.slice(0, eqM.index).trim();
-  const rhs = raw.slice(eqM.index + 1).trim();
-  const unknowns = findUnknowns(raw);
+function solveEquation(expr) {
+  const eq = expr.match(/(?<![=!<>])=(?!=)/);
+  const lhs = expr.slice(0, eq.index).trim();
+  const rhs = expr.slice(eq.index + 1).trim();
+  const unknowns = findUnknowns(expr);
 
   if (unknowns.length === 0) {
     try {
       const l = math.evaluate(lhs, numScope), r = math.evaluate(rhs, numScope);
-      const equal = typeof l === 'number' && typeof r === 'number'
-                    ? Math.abs(l - r) < 1e-9 : String(l) === String(r);
-      return { tex: null, text: equal ? '✓  True' : '✗  False', cls: equal ? 'ok' : null };
-    } catch { return { tex: null, text: 'Cannot verify', cls: 'err' }; }
+      const same = (typeof l === 'number' && typeof r === 'number')
+        ? Math.abs(l - r) < 1e-9 : String(l) === String(r);
+      return { text: same ? '✓  True' : '✗  False', cls: same ? 'ok' : null };
+    } catch { return { text: 'Cannot verify', cls: 'err' }; }
   }
-
   if (unknowns.length > 1)
-    return { tex: null, text: `${unknowns.length} unknowns (${unknowns.join(', ')})`, cls: 'err' };
+    return { text: `${unknowns.length} unknowns (${unknowns.map(disp).join(', ')})`, cls: 'err' };
 
-  const v = unknowns[0];
+  const v = unknowns[0], dv = disp(v);
+  const poly = `(${lhs})-(${rhs})`;
 
-  try {
-    const sols  = nerdamer.solve(`(${lhs})-(${rhs})`, v);
-    const parts = splitSolutions(sols.toString());
-    if (parts.length === 0) return { tex: null, text: 'No solution', cls: null };
+  const coeffs = polyCoeffs(poly, v);
+  if (!coeffs) return numericSolve(lhs, rhs, v);        // non-polynomial → numeric
 
-    const texParts  = parts.map(p => `${v} = ${solToTeX(p)}`);
-    const textParts = parts.map(p => `${v} = ${p}`);
-    return {
-      tex:  texParts.join(' \\quad\\text{or}\\quad '),
-      text: textParts.join('   or   '),
-      cls:  'num',
-    };
-  } catch (_) {
-    return numericFallback(lhs, rhs, v);
+  let parts;
+  const deg = coeffs.length - 1;
+  if (deg < 1) return { text: 'No solution', cls: null };
+  if (deg <= 2) parts = solveLowDegree(coeffs);         // linear / quadratic → exact
+  else {                                                // cubic+ → nerdamer, then tidy
+    try { parts = dedupe(splitList(nerdamer.solve(poly, v).toString()).map(cleanSolution)); }
+    catch { return numericSolve(lhs, rhs, v); }
   }
+
+  if (!complexMode) parts = parts.filter(p => p.real);
+  if (!parts.length) return { text: complexMode ? 'No solution' : 'No real solution', cls: null };
+  return formatSolutions(parts, dv);
 }
 
-/* ============================================================
-   General expression
-============================================================ */
-function handleExpression(raw) {
-  let mathErr;
-  try {
-    const val = math.evaluate(raw, numScope);
-    if (val !== undefined) {
-      if (typeof val === 'number' && isFinite(val)) {
-        return { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
-      }
-      return { tex: null, text: fmtMathResult(val), cls: null };
-    }
-  } catch (e) { mathErr = e; }
-
-  try {
-    const sym = nerdamer(raw);
-    const str = sym.toString();
-    if (str && str !== raw) return { tex: tryTeX(sym), text: str, cls: 'sym' };
-  } catch (_) {}
-
-  throw mathErr || new Error('Cannot evaluate');
-}
-
-/* ============================================================
-   Commands (all return {tex, text, cls})
-============================================================ */
-function cmdDerivative(raw) {
-  const m = raw.match(/^(?:diff|derivative)\s*\(\s*["']?([^"',]+?)["']?\s*,\s*["']?([a-zA-Z_]\w*)["']?(?:\s*,\s*(\d+))?\s*\)/i);
-  if (!m) throw new Error('Usage: derivative("f(x)", "x")');
-  let r = nerdamer.diff(m[1].trim(), m[2].trim());
-  const ord = m[3] ? parseInt(m[3]) : 1;
-  for (let i = 1; i < ord; i++) r = nerdamer.diff(r.toString(), m[2].trim());
-  const sym = nerdamer(r.toString()).simplify();
-  return { tex: tryTeX(sym), text: sym.toString(), cls: 'sym' };
-}
-
-function cmdIntegral(raw) {
-  const m = raw.match(/^integrat[e]?\s*\(\s*["']?([^"',]+?)["']?\s*,\s*["']?([a-zA-Z_]\w*)["']?\s*\)/i);
-  if (!m) throw new Error('Usage: integrate("f(x)", "x")');
-  const sym = nerdamer.integrate(m[1].trim(), m[2].trim());
-  const tex = tryTeX(sym);
+function formatSolutions(parts, dv) {
   return {
-    tex:  tex ? tex + ' + C' : null,
-    text: sym.toString() + ' + C',
-    cls:  'sym',
+    tex: parts.map(p => `${dv} = ${p.tex}`).join('\\quad \\text{or} \\quad '),
+    text: parts.map(p => `${dv} = ${p.text}`).join('   or   '),
+    cls: 'num',
   };
 }
 
-function cmdSimplify(raw) {
-  const m = raw.match(/^simplify\s*\(\s*["']?(.*?)["']?\s*\)$/i);
-  if (!m) throw new Error('Usage: simplify("expression")');
-  const sym = nerdamer(m[1].trim()).simplify();
-  return { tex: tryTeX(sym), text: sym.toString(), cls: 'sym' };
+/* Extract numeric polynomial coefficients [c0, c1, …]; null if non-polynomial */
+function polyCoeffs(poly, v) {
+  let raw;
+  try { raw = splitList(nerdamer.coeffs(poly, v).toString()); } catch { return null; }
+  if (!raw.length) return null;
+  const c = [];
+  for (const cr of raw) {
+    let n;
+    try { n = Number(math.evaluate(disp(cr), numScope)); } catch { return null; }
+    if (!isFinite(n)) return null;
+    c.push(Math.abs(n - Math.round(n)) < 1e-9 ? Math.round(n) : n);
+  }
+  while (c.length > 1 && Math.abs(c[c.length - 1]) < 1e-12) c.pop();
+  return c;
 }
 
-function cmdExpand(raw) {
-  const m = raw.match(/^expand\s*\(\s*["']?(.*?)["']?\s*\)$/i);
-  if (!m) throw new Error('Usage: expand("expression")');
-  const sym = nerdamer.expand(m[1].trim());
-  return { tex: tryTeX(sym), text: sym.toString(), cls: 'sym' };
+/* Exact closed form for degree 1 or 2 */
+function solveLowDegree(c) {
+  if (c.length - 1 === 1) return [ rootFromExpr(`(${-c[0]})/(${c[1]})`) ];
+  const a = c[2], b = c[1], cc = c[0];
+  let disc = b * b - 4 * a * cc;
+  if (Math.abs(disc - Math.round(disc)) < 1e-9) disc = Math.round(disc);
+  if (Math.abs(disc) < 1e-12) return [ rootFromExpr(`(${-b})/(${2 * a})`) ];
+  return [
+    rootFromExpr(`(${-b}+sqrt(${disc}))/(${2 * a})`),
+    rootFromExpr(`(${-b}-sqrt(${disc}))/(${2 * a})`),
+  ];
 }
 
-function cmdFactor(raw) {
-  const m = raw.match(/^factor\s*\(\s*["']?(.*?)["']?\s*\)$/i);
-  if (!m) throw new Error('Usage: factor("expression")');
-  const sym = nerdamer.factor(m[1].trim());
-  return { tex: tryTeX(sym), text: sym.toString(), cls: 'sym' };
+function dedupe(parts) {
+  const seen = new Set(), out = [];
+  for (const p of parts) if (!seen.has(p.text)) { seen.add(p.text); out.push(p); }
+  return out;
+}
+
+/* Simplify an exact root expression via nerdamer → {text, tex, real} */
+function rootFromExpr(expr) {
+  let s;
+  try { s = nerdamer(expr).simplify().toString(); } catch { s = expr; }
+  return { text: disp(s), tex: safeTeXStr(s), real: !/\bi\b/.test(s) };
+}
+
+/* Clean up nerdamer's approximate solutions (degree ≥ 3 fallback) */
+function cleanSolution(part) {
+  const d = disp(part);
+  if (/\d{6,}/.test(part)) {                  // rationalised approximation → round it
+    try {
+      const val = math.evaluate(d, numScope);
+      let re = val && val.isComplex ? val.re : (typeof val === 'number' ? val : NaN);
+      let im = val && val.isComplex ? val.im : 0;
+      if (!isFinite(re)) throw 0;
+      if (Math.abs(re) < 1e-9) re = 0;
+      if (Math.abs(im) < 1e-9) im = 0;
+      if (im === 0) return { text: fmtNum(re), tex: fmtNumTeX(re), real: true };
+      return { text: fmtMath({ isComplex: true, re, im }), tex: complexTeX({ re, im }), real: false };
+    } catch {}
+  }
+  return { text: d, tex: safeTeXStr(part), real: !/\bi\b/.test(d) };
+}
+
+function plainExpr(expr) {
+  let mErr;
+  try {
+    const val = math.evaluate(expr, numScope);
+    if (val !== undefined) {
+      if (typeof val === 'number' && isFinite(val))
+        return { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
+      if (val && val.isComplex) {
+        if (!complexMode && Math.abs(val.im) > 1e-12)
+          return { text: 'undefined (not real)', cls: 'err' };
+        return { tex: complexTeX(val), text: fmtMath(val), cls: 'num' };
+      }
+      if (typeof val === 'number' && !isFinite(val))
+        return { text: 'undefined', cls: 'err' };
+      return { text: fmtMath(val), cls: null };
+    }
+  } catch (e) { mErr = e; }
+
+  try {
+    const s = nerdamer(expr); const str = s.toString();
+    const dstr = disp(str);
+    // A lone variable (e.g. `i` or `x` on its own) has nothing to compute → show nothing
+    if (/^[a-zA-Z]\w*$/.test(dstr)) return { text: null };
+    if (str) return { tex: safeTeX(s), text: dstr, cls: 'sym' };
+  } catch {}
+  // Undefined variable(s) with nothing to simplify → stay quiet rather than error
+  if (mErr && /undefined symbol/i.test(mErr.message)) return { text: null };
+  throw mErr || new Error('Cannot evaluate');
 }
 
 /* ============================================================
-   Numeric fallback solver
+   Symbolic word-commands
 ============================================================ */
-function numericFallback(lhs, rhs, v) {
-  const f = x => {
-    const s = { ...numScope, [v]: x };
-    try { return math.evaluate(lhs, s) - math.evaluate(rhs, s); } catch { return NaN; }
-  };
-  const starts = [-1e3,-200,-50,-20,-10,-5,-3,-2,-1,-.5,0,.5,1,2,3,5,10,20,50,200,1e3];
-  const found  = [];
-  for (const x0 of starts) {
-    const sol = newton(f, x0);
-    if (sol !== null) {
-      const s = Math.round(sol * 1e9) / 1e9;
-      if (!found.some(q => Math.abs(q - s) < 1e-6)) found.push(s);
-    }
-  }
-  if (!found.length) return { tex: null, text: 'No real solution found', cls: null };
-  const parts = found.sort((a,b)=>a-b).map(s => `${v} \\approx ${fmtNum(s)}`);
-  return { tex: parts.join('\\quad\\text{or}\\quad'), text: parts.join(' or '), cls: 'num' };
+function symbolicCmd(name, inner) {
+  const s = complexMode ? inner : inner.replace(new RegExp(IVAR, 'g'), 'i');
+  let out;
+  if (name === 'factor')   out = nerdamer.factor(inner);
+  if (name === 'expand')   out = nerdamer.expand(inner);
+  if (name === 'simplify') out = nerdamer(inner).simplify();
+  return { tex: safeTeX(out), text: disp(out.toString()), cls: 'sym' };
 }
 
-function newton(f, x0, iter = 80) {
+/* ============================================================
+   Calculus (from LaTeX notation)
+============================================================ */
+function evalDerivative(latex) {
+  const m = latex.match(/\\frac\{d\}\{d\s*([a-zA-Z]|\\[a-zA-Z]+)\}/);
+  if (!m) throw new Error('Bad derivative');
+  const v = greekName(m[1]);
+  const operandLatex = latex.slice(m.index + m[0].length);
+  const operand = stripOuter(latexToExpr(operandLatex, complexMode));
+  if (!operand) return { text: 'd/dx of what?', cls: 'err' };
+  const d = nerdamer.diff(operand, v);
+  const s = nerdamer(d.toString()).simplify();
+  return { tex: safeTeX(s), text: disp(s.toString()), cls: 'sym' };
+}
+
+function evalIntegral(latex) {
+  const m = latex.match(/\\int(?:_\{([^}]*)\})?(?:\^\{([^}]*)\})?/);
+  const lowerL = m[1], upperL = m[2];
+  let rest = latex.slice(m.index + m[0].length);
+  // trailing differential: d<var>
+  const dm = rest.match(/(.*)d\s*([a-zA-Z])\s*$/s);
+  let v = 'x', body = rest;
+  if (dm) { body = dm[1]; v = dm[2]; }
+  const operand = stripOuter(latexToExpr(body, complexMode)) || '1';
+
+  if (lowerL != null && upperL != null) {           // definite → numeric
+    const lo = math.evaluate(stripOuter(latexToExpr(lowerL, complexMode)), numScope);
+    const hi = math.evaluate(stripOuter(latexToExpr(upperL, complexMode)), numScope);
+    const val = simpson(x => math.evaluate(operand, { ...numScope, [v]: x }), lo, hi);
+    return { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
+  }
+  const I = nerdamer.integrate(operand, v);          // indefinite → symbolic
+  return { tex: safeTeX(I) + ' + C', text: disp(I.toString()) + ' + C', cls: 'sym' };
+}
+
+function evalSum(latex) {
+  const m = latex.match(/\\sum_\{([a-zA-Z])\s*=\s*([^}]*)\}\^\{([^}]*)\}/);
+  if (!m) return { text: 'Usage: Σ from the palette', cls: 'err' };
+  const v = m[1];
+  const lo = Math.round(math.evaluate(stripOuter(latexToExpr(m[2], complexMode)), numScope));
+  const hi = Math.round(math.evaluate(stripOuter(latexToExpr(m[3], complexMode)), numScope));
+  const rest = latex.slice(m.index + m[0].length);
+  const body = stripOuter(latexToExpr(rest, complexMode)) || '0';
+  if (hi - lo > 100000) return { text: 'Range too large', cls: 'err' };
+  let acc = 0;
+  for (let k = lo; k <= hi; k++) acc += Number(math.evaluate(body, { ...numScope, [v]: k }));
+  return { tex: fmtNumTeX(acc), text: fmtNum(acc), cls: 'num' };
+}
+
+/* Simpson's rule for definite integrals */
+function simpson(f, a, b, n = 1000) {
+  if (a === b) return 0;
+  const h = (b - a) / n; let s = f(a) + f(b);
+  for (let i = 1; i < n; i++) s += (i % 2 ? 4 : 2) * f(a + i * h);
+  return s * h / 3;
+}
+
+/* ============================================================
+   Numeric fallback equation solver (Newton)
+============================================================ */
+function numericSolve(lhs, rhs, v) {
+  const f = x => { try { return math.evaluate(lhs, { ...numScope, [v]: x }) - math.evaluate(rhs, { ...numScope, [v]: x }); } catch { return NaN; } };
+  const starts = [-1e3,-200,-50,-20,-10,-5,-3,-2,-1,-.5,0,.5,1,2,3,5,10,20,50,200,1e3];
+  const found = [];
+  for (const x0 of starts) {
+    const s = newton(f, x0);
+    if (s !== null) { const r = Math.round(s*1e9)/1e9; if (!found.some(q => Math.abs(q-r)<1e-6)) found.push(r); }
+  }
+  if (!found.length) return { text: 'No real solution found', cls: null };
+  const dv = disp(v);
+  const extra = found.length > 6 ? '   …' : '';
+  found.sort((a, b) => Math.abs(a) - Math.abs(b));   // roots nearest zero first
+  const shown = found.slice(0, 6).sort((a, b) => a - b);
+  return {
+    tex: shown.map(s => `${dv} \\approx ${fmtNum(s)}`).join('\\quad \\text{or} \\quad ') + (extra ? '\\;\\dots' : ''),
+    text: shown.map(s => `${dv} ≈ ${fmtNum(s)}`).join('   or   ') + extra,
+    cls: 'num',
+  };
+}
+function newton(f, x0, it = 80) {
   let x = x0;
-  for (let i = 0; i < iter; i++) {
+  for (let i = 0; i < it; i++) {
     const fx = f(x); if (!isFinite(fx)) return null;
     if (Math.abs(fx) < 1e-12) return x;
-    const h = Math.max(1e-7, Math.abs(x)*1e-6);
-    const d = (f(x+h)-fx)/h;
-    if (!isFinite(d)||Math.abs(d)<1e-15){x+=(Math.random()-.5)*.5;continue;}
+    const h = Math.max(1e-7, Math.abs(x)*1e-6), d = (f(x+h)-fx)/h;
+    if (!isFinite(d) || Math.abs(d) < 1e-15) { x += (Math.random()-.5)*.5; continue; }
     x -= fx/d; if (!isFinite(x)) return null;
   }
-  return isFinite(f(x))&&Math.abs(f(x))<1e-6 ? x : null;
+  return isFinite(f(x)) && Math.abs(f(x)) < 1e-6 ? x : null;
 }
 
 /* ============================================================
-   Variable detection
+   LaTeX  →  evaluable expression
+============================================================ */
+function latexToExpr(tex, complex) {
+  if (!tex) return '';
+  let s = tex
+    .replace(/\\left\|/g, '\\abs{').replace(/\\right\|/g, '}')
+    .replace(/\\left\[/g, '(').replace(/\\right\]/g, ')')
+    .replace(/\\left\\\{/g, '(').replace(/\\right\\\}/g, ')')
+    .replace(/\\left\./g, '(').replace(/\\right\./g, ')')
+    .replace(/\\left/g, '').replace(/\\right/g, '')
+    .replace(/\\,/g, ' ').replace(/\\!/g, '').replace(/\\;/g, ' ').replace(/\\ /g, ' ')
+    .replace(/\\cdot/g, '*').replace(/\\times/g, '*').replace(/\\div/g, '/');
+
+  let i = 0;
+
+  function parseArg() {
+    while (s[i] === ' ') i++;
+    const c = s[i];
+    if (c === '{') { i++; const inner = parseSeq('}'); if (s[i] === '}') i++; return '(' + inner + ')'; }
+    if (c === '(') { i++; const inner = parseSeq(')'); if (s[i] === ')') i++; return '(' + inner + ')'; }
+    if (c === '\\') return '(' + parseCommand() + ')';
+    if (c === undefined) return '()';
+    return '(' + s[i++] + ')';
+  }
+
+  function grabBrace() {
+    while (s[i] === ' ') i++;
+    if (s[i] === '{') { i++; let t = ''; let d = 1; while (i < s.length && d) { if (s[i]==='{')d++; else if (s[i]==='}'){d--; if(!d){i++;break;}} t += s[i++]; } return t; }
+    return '';
+  }
+
+  function parseCommand() {
+    i++;
+    if (!/[a-zA-Z]/.test(s[i] || '')) return s[i++] || '';
+    let name = '';
+    while (i < s.length && /[a-zA-Z]/.test(s[i])) name += s[i++];
+    if (name === 'operatorname') name = grabBrace();   // \operatorname{fn} → treat fn directly
+    switch (name) {
+      case 'frac': case 'dfrac': case 'tfrac': { const a = parseArg(), b = parseArg(); return '(' + a + '/' + b + ')'; }
+      case 'sqrt': {
+        while (s[i] === ' ') i++;
+        if (s[i] === '[') { i++; const n = parseSeq(']'); if (s[i] === ']') i++; const x = parseArg(); return '((' + x + ')^(1/(' + n + ')))'; }
+        return 'sqrt' + parseArg();
+      }
+      case 'abs': return 'abs' + parseArg();
+      case 'ln': return 'log' + parseArg();
+      case 'log': {
+        while (s[i] === ' ') i++;
+        let base = '10';
+        if (s[i] === '_') { i++; base = stripOuter(parseArg()); }
+        return 'log(' + stripOuter(parseArg()) + ',' + base + ')';
+      }
+      case 'exp': return 'exp' + parseArg();
+      case 'pi': return 'pi';
+      case 'tau': return '(2*pi)';
+      case 'cdot': case 'times': return '*';
+      case 'div': return '/';
+      case 'infty': return 'Infinity';
+      case 'theta': case 'vartheta': return 'theta';
+      case 'alpha': case 'beta': case 'gamma': case 'delta': case 'epsilon':
+      case 'varepsilon': case 'zeta': case 'eta': case 'iota': case 'kappa':
+      case 'lambda': case 'mu': case 'nu': case 'xi': case 'rho': case 'varrho':
+      case 'sigma': case 'phi': case 'varphi': case 'chi': case 'psi': case 'omega':
+        return name;
+      case 'sin': case 'cos': case 'tan': case 'sec': case 'csc': case 'cot':
+      case 'arcsin': case 'arccos': case 'arctan':
+      case 'sinh': case 'cosh': case 'tanh':
+      case 'sign': case 'floor': case 'ceil': case 'round':
+      case 'gcd': case 'lcm': case 'mod': case 'det': case 'factorial':
+      case 'factor': case 'expand': case 'simplify':
+        return name + parseArg();
+      default: return name;
+    }
+  }
+
+  function parseSeq(stop) {
+    let out = '', lastVal = false;
+    const V = str => { if (lastVal) out += '*'; out += str; lastVal = true; };
+    const O = str => { out += str; lastVal = false; };
+    while (i < s.length) {
+      const c = s[i];
+      if (stop && stop.indexOf(c) >= 0) break;
+      if (c === '}' || c === ')') break;
+      if (/[0-9.]/.test(c)) { let n = ''; while (i < s.length && /[0-9.]/.test(s[i])) n += s[i++]; V(n); continue; }
+      if (/[a-zA-Z]/.test(c)) { V(s[i++]); continue; }
+      if (c === '(') { i++; const inner = parseSeq(')'); if (s[i] === ')') i++; V('(' + inner + ')'); continue; }
+      if (c === '{') { i++; const inner = parseSeq('}'); if (s[i] === '}') i++; V('(' + inner + ')'); continue; }
+      if (c === '^') { i++; out += '^' + parseArg(); lastVal = true; continue; }
+      if (c === '_') { i++; const sub = stripOuter(parseArg()).replace(/[^a-zA-Z0-9]/g, ''); out += sub; lastVal = true; continue; }
+      if (c === '+' || c === '-' || c === '/' || c === '=' || c === ',' || c === '*') { O(c); i++; continue; }
+      if (c === ' ') { i++; continue; }
+      if (c === '\\') { const r = parseCommand(); if (r === '*' || r === '/') O(r); else V(r); continue; }
+      O(c); i++;
+    }
+    return out;
+  }
+
+  let expr = parseSeq(null);
+  if (!complex) expr = expr.replace(/\bi\b/g, IVAR);
+  return expr;
+}
+
+/* ============================================================
+   Helpers
 ============================================================ */
 const BUILTINS = new Set([
-  'sin','cos','tan','asin','acos','atan','atan2','sinh','cosh','tanh',
-  'asinh','acosh','atanh','sqrt','cbrt','exp','log','log2','log10',
+  'sin','cos','tan','sec','csc','cot','asin','acos','atan','arcsin','arccos','arctan',
+  'sinh','cosh','tanh','sqrt','cbrt','exp','log','log2','log10','ln',
   'abs','ceil','floor','round','sign','factorial','gamma','nthRoot',
-  'min','max','sum','mean','mod','pow','re','im','arg','conj',
-  'pi','e','i','phi','tau','Infinity','NaN','true','false','null',
-  'derivative','diff','integrate','simplify','expand','factor','solve',
-  'and','or','not','xor',
+  'min','max','sum','mean','mod','pow','gcd','lcm','det','re','im','arg','conj',
+  'pi','e','tau','phi','Infinity','NaN','true','false',
+  'factor','expand','simplify','integrate','derivative','diff','C',
 ]);
+
 function findUnknowns(expr) {
-  const found = new Set();
-  for (const m of expr.matchAll(/[a-zA-Z_]\w*/g)) {
+  const found = new Set(); const re = /[a-zA-Z_]\w*/g; let m;
+  while ((m = re.exec(expr))) {
     const n = m[0];
-    if (!BUILTINS.has(n) && !varNames.has(n)) found.add(n);
+    if (expr[re.lastIndex] === '(') continue;   // function call
+    if (BUILTINS.has(n)) continue;
+    if (complexMode && n === 'i') continue;      // imaginary unit
+    found.add(n);
   }
   return [...found];
 }
 
-/* ============================================================
-   Preprocessing (implicit mult for equation solving)
-============================================================ */
-function preprocess(expr) {
-  return expr
-    .replace(/(\d)([a-df-zA-DF-Z_])/g, '$1*$2')
-    .replace(/(\d)(e)(?!\d)/gi, '$1*$2')
-    .replace(/\)\s*\(/g, ')*(')
-    .replace(/([0-9])\s*\(/g, '$1*(');
-}
+function greekName(tok) { return tok.replace(/^\\/, ''); }
 
-/* ============================================================
-   LaTeX helpers
-============================================================ */
-function tryTeX(nerdExpr) {
-  try { return nerdExpr.toTeX(); } catch { return null; }
-}
-
-function solToTeX(solStr) {
-  try { return nerdamer(solStr).toTeX(); }
-  catch { return solStr; }
-}
-
-function fmtNumTeX(x) {
-  if (!isFinite(x)) return String(x);
-  const r = Math.round(x);
-  if (Math.abs(x - r) < 1e-9) return String(r);
-  // Try fraction
-  for (let d = 2; d <= 1000; d++) {
-    const n = Math.round(x * d);
-    if (n !== 0 && Math.abs(n/d - x) < 1e-9 && Math.abs(n) <= d * 20)
-      return `\\frac{${n}}{${d}}`;
+function stripOuter(str) {
+  if (!str) return str;
+  if (str[0] === '(' && str[str.length - 1] === ')') {
+    let d = 0;
+    for (let k = 0; k < str.length; k++) {
+      if (str[k] === '(') d++;
+      else if (str[k] === ')') { d--; if (d === 0 && k < str.length - 1) return str; }
+    }
+    return str.slice(1, -1);
   }
-  return parseFloat(x.toPrecision(10)).toString();
+  return str;
 }
 
-/* ============================================================
-   Formatting helpers
-============================================================ */
-function fmtNum(x) {
-  if (typeof x !== 'number' || !isFinite(x)) return String(x);
-  const r = Math.round(x);
-  if (Math.abs(x - r) < 1e-9) return String(r);
-  for (let d = 2; d <= 1000; d++) {
-    const n = Math.round(x * d);
-    if (n !== 0 && Math.abs(n/d - x) < 1e-9 && Math.abs(n) <= d * 20) return `${n}/${d}`;
-  }
-  return parseFloat(x.toPrecision(10)).toString();
-}
-
-function fmtMathResult(val) {
-  if (val == null) return '';
-  if (typeof val === 'boolean') return val ? 'true' : 'false';
-  if (typeof val === 'number')  return fmtNum(val);
-  if (typeof val === 'string')  return `"${val}"`;
-  if (val.isUnit)   return val.toString();
-  if (val.isMatrix) {
-    const a = val.toArray();
-    const f = r => Array.isArray(r) ? '['+r.map(fmtNum).join(', ')+']' : fmtNum(r);
-    return '[' + a.map(f).join(',  ') + ']';
-  }
-  if (val.isComplex) {
-    const re = fmtNum(val.re), im = Math.abs(val.im);
-    if (val.im === 0) return re;
-    if (val.re === 0) return `${fmtNum(val.im)}i`;
-    return `${re} ${val.im >= 0 ? '+' : '−'} ${fmtNum(im)}i`;
-  }
-  try { return JSON.stringify(val); } catch { return String(val); }
-}
-
-function splitSolutions(solStr) {
-  const inner = solStr.replace(/^\[|\]$/g, '').trim();
+function splitList(str) {
+  const inner = str.replace(/^\[|\]$/g, '').trim();
   if (!inner) return [];
-  const parts = []; let depth = 0, cur = '';
+  const parts = []; let d = 0, cur = '';
   for (const ch of inner) {
-    if ('(['.includes(ch)) depth++;
-    else if (')]'.includes(ch)) depth--;
-    if (ch === ',' && depth === 0) { if (cur.trim()) parts.push(cur.trim()); cur = ''; }
+    if ('(['.includes(ch)) d++;
+    else if (')]'.includes(ch)) d--;
+    if (ch === ',' && d === 0) { if (cur.trim()) parts.push(cur.trim()); cur = ''; }
     else cur += ch;
   }
   if (cur.trim()) parts.push(cur.trim());
   return parts;
 }
 
-function niceError(msg = '') {
-  return msg.replace(/^Error:\s*/i,'').replace(/Unexpected token.*/i,'Syntax error')
-            .replace(/Cannot read prop.*/i,'Syntax error').slice(0, 70);
+/* Replace internal IVAR back to i for display */
+function disp(str) { return String(str).replace(new RegExp(IVAR, 'g'), 'i'); }
+
+function safeTeX(x) {
+  try { if (x && typeof x.toTeX === 'function') return disp(x.toTeX()); } catch {}
+  try { return disp(nerdamer(x.toString()).toTeX()); } catch { return null; }   // simplify() returns a plain object
 }
+function safeTeXStr(str) { try { return disp(nerdamer(str).toTeX()); } catch { return disp(str); } }
 
-/* ============================================================
-   UI helpers
-============================================================ */
-function allLines()   { return [...document.querySelectorAll('#lines .line')]; }
-function qs(sel)      { return document.querySelector(sel); }
-function renumber()   { allLines().forEach((l, i) => { l.querySelector('.lnum').textContent = i+1; }); }
-function updateStatus(){ document.getElementById('lineCount').textContent = allLines().length; }
-
-function toggleKb(hdr) {
-  const body  = document.getElementById('kbBody');
-  const arrow = hdr.querySelector('span');
-  const open  = body.style.display !== 'none';
-  body.style.display = open ? 'none' : '';
-  arrow.textContent  = open ? '▶' : '▼';
+function fmtNum(x) {
+  if (typeof x !== 'number' || !isFinite(x)) return String(x);
+  const r = Math.round(x);
+  if (Math.abs(x - r) < 1e-9) return String(r);
+  for (let d = 2; d <= 1000; d++) { const n = Math.round(x*d); if (n !== 0 && Math.abs(n/d - x) < 1e-9 && Math.abs(n) <= d*25) return `${n}/${d}`; }
+  return parseFloat(x.toPrecision(10)).toString();
 }
-
-function toggleRef(hdr) {
-  const body  = document.getElementById('refBody');
-  const arrow = hdr.querySelector('span');
-  const open  = body.style.display !== 'none';
-  body.style.display = open ? 'none' : '';
-  arrow.textContent  = open ? '▶' : '▼';
+function fmtNumTeX(x) {
+  if (typeof x !== 'number' || !isFinite(x)) return String(x);
+  const r = Math.round(x);
+  if (Math.abs(x - r) < 1e-9) return String(r);
+  for (let d = 2; d <= 1000; d++) { const n = Math.round(x*d); if (n !== 0 && Math.abs(n/d - x) < 1e-9 && Math.abs(n) <= d*25) return `\\frac{${n}}{${d}}`; }
+  return parseFloat(x.toPrecision(10)).toString();
 }
-
-function insertEx(el) {
-  const val = el.textContent.trim();
-  if (lastFocus) {
-    const inp = lastFocus.querySelector('.linput');
-    if (inp) { inp.value = val; inp.focus(); evaluateAll(); return; }
+function complexTeX(v) {
+  if (v.im === 0) return fmtNumTeX(v.re);
+  const absIm = Math.abs(v.im);
+  const imStr = absIm === 1 ? 'i' : `${fmtNum(absIm)}i`;
+  if (v.re === 0) return (v.im < 0 ? '-' : '') + imStr;
+  return `${fmtNum(v.re)} ${v.im >= 0 ? '+' : '-'} ${imStr}`;
+}
+function fmtMath(v) {
+  if (v == null) return '';
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  if (typeof v === 'number') return fmtNum(v);
+  if (typeof v === 'string') return `"${v}"`;
+  if (v.isUnit) return v.toString();
+  if (v.isMatrix) { const a = v.toArray(); const f = r => Array.isArray(r) ? '['+r.map(fmtNum).join(', ')+']' : fmtNum(r); return '['+a.map(f).join(',  ')+']'; }
+  if (v.isComplex) {
+    if (v.im === 0) return fmtNum(v.re);
+    const absIm = Math.abs(v.im);
+    const imStr = absIm === 1 ? 'i' : `${fmtNum(absIm)}i`;
+    if (v.re === 0) return (v.im < 0 ? '−' : '') + imStr;
+    return `${fmtNum(v.re)} ${v.im >= 0 ? '+' : '−'} ${imStr}`;
   }
-  addLine(val);
+  try { return JSON.stringify(v); } catch { return String(v); }
 }
+function niceError(msg = '') {
+  return disp(msg).replace(/^Error:\s*/i, '').replace(/Unexpected.*/i, 'Syntax error')
+    .replace(/Cannot read prop.*/i, 'Syntax error').replace(/undefined symbol\s*/i, 'unknown: ').slice(0, 70);
+}
+
+/* ── UI ── */
+function allLines() { return [...document.querySelectorAll('#lines .line')]; }
+function renumber() { allLines().forEach((l, i) => l.querySelector('.lnum').textContent = i + 1); }
+function updateStatus() { document.getElementById('lineCount').textContent = allLines().length; }
+function toggleKb(h) { const b = document.getElementById('kbBody'), a = h.querySelector('span'); const o = b.style.display !== 'none'; b.style.display = o ? 'none' : ''; a.textContent = o ? '▶' : '▼'; }
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePalette(); });
 </script>
 </body>
 </html>
