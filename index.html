@@ -836,6 +836,11 @@ function evalExpr(expr) {
   const cmd = expr.match(/^(factor|expand|simplify)\((.*)\)$/s);
   if (cmd) return symbolicCmd(cmd[1], cmd[2]);
 
+  // Trailing "=" with nothing after it (e.g. "7*8=") → just show the answer,
+  // like pressing "=" on a calculator, instead of comparing against an empty right side.
+  const trimmed = expr.trim();
+  if (trimmed.endsWith('=') && !trimmed.endsWith('==')) return plainExpr(trimmed.slice(0, -1));
+
   // Assignment:  <name> = <value>
   const asgn = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
   if (asgn && !/[+\-*/^]/.test(asgn[1])) return assign(asgn[1], asgn[2]);
