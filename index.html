@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Algebra Calculator</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>∑</text></svg>" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%237c5cbf'/><line x1='6' y1='6' x2='18' y2='18' stroke='white' stroke-width='3.4' stroke-linecap='round'/><line x1='18' y1='6' x2='6' y2='18' stroke='white' stroke-width='3.4' stroke-linecap='round'/></svg>" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mathquill@0.10.1/build/mathquill.css" />
   <style>
@@ -24,13 +24,17 @@
     header {
       background:linear-gradient(135deg,#1a1a2e,#0f0f28);
       border-bottom:1px solid var(--border); padding:14px 28px;
-      display:flex; align-items:center; gap:14px; position:sticky; top:0; z-index:20;
+      display:flex; align-items:center; gap:14px; flex-wrap:wrap; position:sticky; top:0; z-index:20;
+    }
+    @media (max-width:560px) {
+      header { padding:12px 16px; gap:10px; }
+      .header-right { width:100%; margin-left:0; flex-wrap:wrap; }
     }
     .logo {
       width:42px; height:42px;
       background:linear-gradient(135deg,var(--accent),var(--accent-l));
       border-radius:11px; display:flex; align-items:center; justify-content:center;
-      font-size:1.5rem; font-weight:900; flex-shrink:0;
+      font-size:1.5rem; font-weight:900; line-height:1; flex-shrink:0;
     }
     header h1 { font-size:1.25rem; font-weight:700; }
     header p  { font-size:.75rem; color:var(--dim); margin-top:1px; }
@@ -54,7 +58,27 @@
     }
     .mode-toggle button.active { background:var(--accent); color:#fff; font-weight:600; }
 
-    main { max-width:960px; width:100%; margin:26px auto; padding:0 18px 60px; }
+    .app-row {
+      flex:1; min-width:0; max-width:1180px; width:100%; margin:14px auto 0; padding:0 18px;
+      display:flex; gap:16px; align-items:flex-start;
+    }
+    main { flex:1; min-width:0; padding:0 0 20px; }
+
+    /* ── Variables sidebar ── */
+    .vars-panel {
+      width:200px; flex-shrink:0; background:var(--surface); border:1px solid var(--border);
+      border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:8px;
+    }
+    .vars-panel h2 { font-size:.66rem; text-transform:uppercase; letter-spacing:.8px; color:var(--dim); }
+    .vars-list { display:flex; flex-direction:column; gap:6px; }
+    .var-item {
+      background:var(--card); border:1px solid var(--border); border-radius:8px;
+      padding:7px 10px; font-size:.85rem; display:flex; justify-content:space-between;
+      gap:8px; align-items:baseline;
+    }
+    .var-item .var-name { color:var(--green); font-style:italic; font-weight:700; flex-shrink:0; }
+    .var-item .var-val  { color:var(--blue); font-family:'Cascadia Code','Consolas',monospace; text-align:right; word-break:break-word; }
+    .vars-empty { font-size:.74rem; color:var(--dim); font-style:italic; }
 
     /* ── Calculator card ── */
     .calc-card {
@@ -65,11 +89,9 @@
       background:var(--card); padding:9px 16px; display:flex; align-items:center; gap:6px;
       border-bottom:1px solid var(--border);
     }
-    .dot { width:11px; height:11px; border-radius:50%; }
-    .dot-r{background:#ff5f57} .dot-y{background:#febc2e} .dot-g{background:#28c840}
-    .calc-fname { margin-left:auto; font-size:.72rem; color:var(--dim); font-family:monospace; }
+    .calc-fname { font-size:.78rem; color:var(--dim); font-weight:600; }
 
-    .lines { padding:12px 12px 6px; }
+    .lines { padding:12px 12px 6px; max-height:380px; overflow-y:auto; overflow-x:hidden; }
     .line {
       display:flex; align-items:center; gap:10px; min-height:50px;
       padding:5px 10px; border-radius:8px; border:1px solid transparent;
@@ -101,7 +123,9 @@
     .lresult {
       text-align:right; max-width:340px; flex-shrink:0; font-size:.95rem;
       word-break:break-word; font-family:'Cascadia Code','Consolas',monospace;
+      display:flex; flex-direction:column; align-items:flex-end; gap:2px;
     }
+    .lresult-or { font-size:.62rem; text-transform:uppercase; letter-spacing:.5px; color:var(--dim); }
     .lresult.num { color:var(--blue); }
     .lresult.sym { color:var(--gold); }
     .lresult.ok  { color:var(--green); }
@@ -131,18 +155,42 @@
     }
     .status b { color:var(--text); font-weight:600; }
 
-    /* ── Virtual keyboard ── */
+    /* ── Virtual keyboard (Desmos-style bottom pop-up, always docked) ── */
+    main { padding-bottom:calc(min(46vh,420px) + 24px); }
     .kb-wrap {
-      margin-top:16px; background:var(--surface); border:1px solid var(--border);
-      border-radius:14px; overflow:hidden;
+      position:fixed; left:0; right:0; bottom:0; z-index:30;
+      background:var(--surface); border-top:1px solid var(--border);
+      box-shadow:0 -10px 40px rgba(0,0,0,.5);
+      max-height:min(46vh,420px); display:flex; flex-direction:column;
     }
     .kb-hdr {
-      background:var(--card); padding:10px 18px; cursor:pointer;
+      background:var(--card); padding:8px 18px;
       display:flex; justify-content:space-between; align-items:center;
-      font-size:.86rem; font-weight:600; user-select:none; border-bottom:1px solid var(--border);
+      font-size:.8rem; font-weight:600; user-select:none; border-bottom:1px solid var(--border);
+      flex-shrink:0; max-width:960px; margin:0 auto; width:100%;
     }
-    .kb-hdr:hover { background:#1f1f38; }
-    .kb-body { padding:12px 14px; display:flex; flex-direction:column; gap:10px; }
+    .kb-body {
+      padding:10px 14px 12px; display:flex; flex-direction:column; gap:8px;
+      overflow-y:auto; flex:1; min-height:0;
+      max-width:960px; margin:0 auto; width:100%; box-sizing:border-box;
+    }
+    @media (max-width:560px) {
+      main { padding-bottom:calc(48vh + 20px); }
+      .kb-wrap { max-height:48vh; }
+      .app-row { flex-direction:column; padding:0 16px; }
+      .vars-panel { width:100%; }
+      .vars-list { flex-direction:row; flex-wrap:wrap; }
+      .var-item { flex:0 0 auto; }
+    }
+    /* Desktop: the whole page never scrolls — only the line list does */
+    @media (min-width:561px) {
+      html, body { height:100%; overflow:hidden; }
+      .app-row { min-height:0; overflow:hidden; }
+      main { flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+      .calc-card { flex:1; min-height:0; display:flex; flex-direction:column; }
+      .lines { flex:1; min-height:0; }
+      .vars-panel { align-self:stretch; overflow-y:auto; }
+    }
 
     .kb-section-label { font-size:.62rem; text-transform:uppercase; letter-spacing:.8px; color:var(--dim); margin-bottom:-4px; }
     .kb-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
@@ -150,7 +198,7 @@
 
     .kb {
       background:var(--card); border:1px solid var(--border); color:var(--text);
-      border-radius:7px; cursor:pointer; font-size:.9rem; padding:8px 0;
+      border-radius:7px; cursor:pointer; font-size:.92rem; padding:8px 0;
       min-width:42px; text-align:center; transition:background .12s,border-color .12s;
       flex-shrink:0; user-select:none;
       font-family:'Cambria Math','Cambria','Times New Roman',serif;
@@ -163,11 +211,36 @@
     .kb.var    { color:var(--green); font-style:italic; }
     .kb.del    { color:var(--red); }
     .kb.wide   { min-width:64px; }
+    .kb-frac { display:inline-flex; flex-direction:column; align-items:center; line-height:1.15; font-size:.85em; }
+    .kb-frac-bar { width:100%; height:1px; background:currentColor; margin:2px 0; }
     .kb.special {
       background:linear-gradient(135deg,var(--accent),var(--accent-l));
       color:#fff; border-color:transparent; font-weight:600; min-width:auto; padding:8px 16px;
     }
     .kb.special:hover { filter:brightness(1.1); }
+
+    /* ── Desmos-style keypad grid ── */
+    .kb-desmos { display:flex; gap:10px; flex-wrap:wrap; align-items:stretch; }
+    .kb-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; min-width:0; flex:1 1 200px; }
+    .kb-grid .kb { width:100%; min-width:0; padding:9px 0; font-size:.95rem; }
+    .kb-grid-num .kb.op { color:var(--gold); }
+    .kb-side { display:flex; flex-direction:column; gap:6px; min-width:88px; }
+    .kb-side .kb { flex:1; min-width:0; width:100%; font-size:.95rem; }
+    .kb-side-nav { display:flex; gap:6px; }
+    .kb-side-nav .kb { flex:1; }
+    .kb.enter {
+      background:linear-gradient(135deg,var(--accent),var(--accent-l));
+      color:#fff; border-color:transparent; font-weight:600; font-size:.9rem;
+    }
+    .kb.enter:hover { filter:brightness(1.1); }
+    @media (max-width:560px) {
+      .kb-desmos { flex-direction:column; gap:8px; }
+      .kb-grid { flex-basis:auto; }
+      .kb-grid .kb { padding:12px 0; font-size:1.05rem; }
+      .kb-side { flex-direction:row; min-width:auto; }
+      .kb-side-nav { flex:1; }
+      .kb.enter { flex:2; }
+    }
 
     /* ── Function palette modal ── */
     .modal-overlay {
@@ -215,7 +288,12 @@
 <body>
 
 <header>
-  <div class="logo">∑</div>
+  <div class="logo">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round">
+      <line x1="5" y1="5" x2="19" y2="19"/>
+      <line x1="19" y1="5" x2="5" y2="19"/>
+    </svg>
+  </div>
   <div>
     <h1>Algebra Calculator</h1>
     <p>Live math input · exact answers · multi-line</p>
@@ -225,16 +303,21 @@
       <button id="modeReal" class="active" onclick="setComplex(false)">ℝ Real</button>
       <button id="modeComplex" onclick="setComplex(true)">ℂ Complex</button>
     </div>
-    <button class="btn" onclick="loadExamples()">Examples</button>
     <button class="btn" onclick="clearAll()">Clear</button>
   </div>
 </header>
 
-<main>
+<div class="app-row">
+  <aside class="vars-panel" id="varsPanel">
+    <h2>Variables</h2>
+    <div class="vars-list" id="varsList">
+      <div class="vars-empty">No variables yet</div>
+    </div>
+  </aside>
+  <main>
   <div class="calc-card">
     <div class="calc-titlebar">
-      <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
-      <span class="calc-fname">notebook.alg</span>
+      <span class="calc-fname">Algebra Calculator</span>
     </div>
     <div class="lines" id="lines"></div>
     <div class="status">
@@ -245,46 +328,60 @@
   </div>
 
   <!-- ── Virtual keyboard ── -->
-  <div class="kb-wrap">
-    <div class="kb-hdr" onclick="toggleKb(this)">⌨️ Keyboard <span>▼</span></div>
+  <div class="kb-wrap" id="kbWrap">
+    <div class="kb-hdr">
+      <span>⌨️ Keyboard</span>
+    </div>
     <div class="kb-body" id="kbBody">
 
-      <div class="kb-section-label">Numbers &amp; operators</div>
-      <div class="kb-row">
-        <button class="kb num" onclick="K.type('7')">7</button>
-        <button class="kb num" onclick="K.type('8')">8</button>
-        <button class="kb num" onclick="K.type('9')">9</button>
-        <button class="kb op"  onclick="K.type('+')">+</button>
-        <button class="kb op"  onclick="K.type('-')">−</button>
-        <div class="kb-sep"></div>
-        <button class="kb num" onclick="K.type('4')">4</button>
-        <button class="kb num" onclick="K.type('5')">5</button>
-        <button class="kb num" onclick="K.type('6')">6</button>
-        <button class="kb op"  onclick="K.type('*')">×</button>
-        <button class="kb op"  onclick="K.type('/')">÷</button>
-        <div class="kb-sep"></div>
-        <button class="kb num" onclick="K.type('1')">1</button>
-        <button class="kb num" onclick="K.type('2')">2</button>
-        <button class="kb num" onclick="K.type('3')">3</button>
-        <button class="kb op"  onclick="K.type('(')">(</button>
-        <button class="kb op"  onclick="K.type(')')">)</button>
-        <div class="kb-sep"></div>
-        <button class="kb num" onclick="K.type('0')">0</button>
-        <button class="kb num" onclick="K.type('.')">.</button>
-        <button class="kb op"  onclick="K.type('=')">=</button>
-        <button class="kb del" onclick="K.backspace()">⌫</button>
-      </div>
+      <div class="kb-section-label">Keypad</div>
+      <div class="kb-desmos">
+        <div class="kb-grid kb-grid-misc">
+          <button class="kb op" onclick="K.pow2()">x²</button>
+          <button class="kb op" onclick="K.cmd('^')">xʸ</button>
+          <button class="kb op" onclick="K.cmd('\\sqrt')">√</button>
+          <button class="kb op" onclick="K.nthroot()">ⁿ√</button>
 
-      <div class="kb-section-label">Powers, roots &amp; fractions</div>
-      <div class="kb-row">
-        <button class="kb op" onclick="K.cmd('^')">xʸ</button>
-        <button class="kb op" onclick="K.pow2()">x²</button>
-        <button class="kb op" onclick="K.cmd('\\sqrt')">√</button>
-        <button class="kb op" onclick="K.nthroot()">ⁿ√</button>
-        <button class="kb op" onclick="K.cmd('\\frac')">a/b</button>
-        <button class="kb op" onclick="K.type('pi')">π</button>
-        <button class="kb op" onclick="K.type('e')">e</button>
-        <button class="kb op" onclick="K.abs()">|x|</button>
+          <button class="kb op" onclick="K.type('(')">(</button>
+          <button class="kb op" onclick="K.type(')')">)</button>
+          <button class="kb op" onclick="K.cmd('\\frac')"><span class="kb-frac"><span>a</span><span class="kb-frac-bar"></span><span>b</span></span></button>
+          <button class="kb op" onclick="K.abs()">|x|</button>
+
+          <button class="kb op" onclick="K.type('pi')">π</button>
+          <button class="kb op" onclick="K.type('e')">e</button>
+          <button class="kb var" onclick="K.cmd('\\theta')">θ</button>
+          <button class="kb del" onclick="K.backspace()">⌫</button>
+        </div>
+
+        <div class="kb-grid kb-grid-num">
+          <button class="kb num" onclick="K.type('7')">7</button>
+          <button class="kb num" onclick="K.type('8')">8</button>
+          <button class="kb num" onclick="K.type('9')">9</button>
+          <button class="kb op"  onclick="K.type('/')">÷</button>
+
+          <button class="kb num" onclick="K.type('4')">4</button>
+          <button class="kb num" onclick="K.type('5')">5</button>
+          <button class="kb num" onclick="K.type('6')">6</button>
+          <button class="kb op"  onclick="K.type('*')">×</button>
+
+          <button class="kb num" onclick="K.type('1')">1</button>
+          <button class="kb num" onclick="K.type('2')">2</button>
+          <button class="kb num" onclick="K.type('3')">3</button>
+          <button class="kb op"  onclick="K.type('-')">−</button>
+
+          <button class="kb num" onclick="K.type('0')">0</button>
+          <button class="kb num" onclick="K.type('.')">.</button>
+          <button class="kb op"  onclick="K.type('=')">=</button>
+          <button class="kb op"  onclick="K.type('+')">+</button>
+        </div>
+
+        <div class="kb-side">
+          <div class="kb-side-nav">
+            <button class="kb" onclick="K.left()">←</button>
+            <button class="kb" onclick="K.right()">→</button>
+          </div>
+          <button class="kb enter" onclick="K.enter()">⏎ Enter</button>
+        </div>
       </div>
 
       <div class="kb-section-label">Functions</div>
@@ -332,7 +429,8 @@
 
     </div>
   </div>
-</main>
+  </main>
+</div>
 
 <!-- ── Function palette modal ── -->
 <div class="modal-overlay" id="palette" onclick="if(event.target===this)closePalette()">
@@ -361,23 +459,31 @@
    Globals
 ============================================================ */
 const MQ = MathQuill.getInterface(2);
-const IVAR = 'ii_reserved';           // stand-in for `i` when in Real mode
+const IVAR = 'ireservedvar';          // stand-in for `i` when in Real mode (no underscore: nerdamer's toTeX() treats "_" as a LaTeX subscript separator, which broke disp()'s literal-string replace)
 let complexMode = false;
 let numScope = {}, varNames = new Set();
+let knownVars = new Map();   // name -> {text} for the sidebar; separate from numScope since
+                              // ambiguous (multi-valued) variables can't be substituted elsewhere
+                              // but should still show up so the user can see "we found these values"
 let activeMQ = null, activeLine = null;
 
-const MQ_CONFIG = {
-  spaceBehavesLikeTab: true,
-  autoCommands: 'pi tau theta alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma phi chi psi omega sqrt sum prod int infty',
-  autoOperatorNames: 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh ln log exp abs sign floor ceil round gcd lcm mod det factor expand simplify factorial',
-  handlers: {
-    edit: mq => { onFocusField(mq); scheduleEval(); },
-    enter: mq => enterFrom(mq),
-    upOutOf: mq => moveVert(mq, -1),
-    downOutOf: mq => moveVert(mq, +1),
-    deleteOutOf: (dir, mq) => { if (dir === MQ.L) backspaceEmpty(mq); },
-  },
-};
+/* MathQuill mutates the config object it's given (rewrites .handlers into its
+   own internal shape), so every field needs a fresh object — sharing one
+   across fields silently breaks the handlers for every field but the first. */
+function makeMQConfig() {
+  return {
+    spaceBehavesLikeTab: true,
+    autoCommands: 'pi tau theta alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma phi chi psi omega sqrt sum prod int infty',
+    autoOperatorNames: 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh ln log exp abs sign floor ceil round gcd lcm mod det factor expand simplify factorial',
+    handlers: {
+      edit: mq => { onFocusField(mq); scheduleEval(); },
+      enter: mq => enterFrom(mq),
+      upOutOf: mq => moveVert(mq, -1),
+      downOutOf: mq => moveVert(mq, +1),
+      deleteOutOf: (dir, mq) => { if (dir === MQ.L) backspaceEmpty(mq); },
+    },
+  };
+}
 
 /* ============================================================
    Boot
@@ -392,15 +498,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
 /* Fix MathQuill's broken scaleY on empty sqrt boxes */
 function fixSqrtScaling() {
+  const SEL = '.mq-sqrt-prefix, .mq-paren';
   function patch(el) {
-    if (!el.classList || !el.classList.contains('mq-sqrt-prefix')) return;
+    if (!el.classList || !(el.classList.contains('mq-sqrt-prefix') || el.classList.contains('mq-paren'))) return;
     const m = (el.style.transform || '').match(/scale\s*\([^,]+,\s*([-\d.]+)\)/);
     if (m && Math.abs(parseFloat(m[1])) < 0.5) el.style.transform = 'scale(1,1)';
   }
   new MutationObserver(muts => {
     muts.forEach(m => {
       if (m.type === 'attributes') { patch(m.target); }
-      else m.addedNodes.forEach(n => { if (n.nodeType === 1) { patch(n); n.querySelectorAll('.mq-sqrt-prefix').forEach(patch); } });
+      else m.addedNodes.forEach(n => { if (n.nodeType === 1) { patch(n); n.querySelectorAll(SEL).forEach(patch); } });
     });
   }).observe(document.body, { attributes: true, subtree: true, attributeFilter: ['style'], childList: true });
 }
@@ -430,7 +537,7 @@ function addLine(latex = '', focus = true) {
   container.appendChild(addBtn);
 
   const fieldEl = div.querySelector('.mq-field');
-  const mq = MQ.MathField(fieldEl, MQ_CONFIG);
+  const mq = MQ.MathField(fieldEl, makeMQConfig());
   fieldEl.__mq = mq;
   div._mq = mq;
   if (latex) mq.latex(latex);
@@ -465,34 +572,29 @@ function clearAll() {
   setTimeout(() => document.querySelector('.mq-field').__mq.focus(), 0);
 }
 
-function loadExamples() {
-  document.getElementById('lines').innerHTML = '';
-  ['2^{10}', '\\sqrt{2}+\\pi', 'r=6', '\\pi r^2',
-   'x^2-5x+6=0', '3x-2=x+8',
-   '\\frac{d}{dx}\\left(x^3+2x\\right)', 'factor\\left(x^2-9\\right)']
-    .forEach(l => addLine(l, false));
-  setTimeout(() => { evaluateAll(); }, 0);
-}
-
-/* ── inter-field navigation ── */
+/* ── inter-field navigation ──
+   Note: MathQuill passes a freshly-wrapped API object into each handler call,
+   not the original `mq` stored on the line, so comparing by reference (===)
+   never matches. Use the reliably-tracked `activeLine` (set on focusin/mousedown
+   with the original mq) to find the current line instead. */
 function enterFrom(mq) {
   const lines = allLines();
-  const idx = lines.findIndex(l => l._mq === mq);
-  if (idx === lines.length - 1) addLine();
+  const idx = lines.indexOf(activeLine);
+  if (idx === -1 || idx === lines.length - 1) addLine();
   else lines[idx + 1]._mq.focus();
 }
 function moveVert(mq, dir) {
   const lines = allLines();
-  const idx = lines.findIndex(l => l._mq === mq);
+  const idx = lines.indexOf(activeLine);
   const t = idx + dir;
-  if (t >= 0 && t < lines.length) lines[t]._mq.focus();
+  if (idx !== -1 && t >= 0 && t < lines.length) lines[t]._mq.focus();
   else if (dir > 0) addLine();
 }
 function backspaceEmpty(mq) {
   const lines = allLines();
   if (lines.length <= 1) return;
-  const idx = lines.findIndex(l => l._mq === mq);
-  if (mq.latex().trim() === '') deleteLine(lines[idx]);
+  const idx = lines.indexOf(activeLine);
+  if (idx !== -1 && mq.latex().trim() === '') deleteLine(lines[idx]);
 }
 
 /* ============================================================
@@ -510,6 +612,9 @@ const K = {
   logBase(){ const mq = this.ensure(); if (mq) { mq.typedText('log'); mq.cmd('_'); mq.focus(); scheduleEval(); } },
   abs()    { const mq = this.ensure(); if (mq) { mq.cmd('|'); mq.focus(); scheduleEval(); } },
   nthroot(){ const mq = this.ensure(); if (mq) { mq.cmd('\\nthroot'); mq.focus(); scheduleEval(); } },
+  left()   { const mq = this.ensure(); if (mq) { mq.keystroke('Left'); mq.focus(); } },
+  right()  { const mq = this.ensure(); if (mq) { mq.keystroke('Right'); mq.focus(); } },
+  enter()  { const mq = this.ensure(); if (mq) { mq.typedText('\n'); } },
 };
 
 /* ============================================================
@@ -601,9 +706,12 @@ function setComplex(on) {
 
 function evaluateAll() {
   try { nerdamer.clearVars(); } catch {}
-  numScope = {}; varNames = new Set();
+  numScope = {}; varNames = new Set(); knownVars = new Map();
 
-  allLines().forEach(line => {
+  const linesArr = allLines();
+  const systemResults = solveSystems(linesArr);
+
+  linesArr.forEach(line => {
     const mq = line._mq;
     const latex = mq ? mq.latex() : '';
     const arrow = line.querySelector('.larrow');
@@ -617,7 +725,7 @@ function evaluateAll() {
     if (!latex || !latex.trim()) return;
 
     try {
-      const out = evalLatex(latex);
+      const out = systemResults.get(line) || evalLatex(latex);
       if (out && out.text != null) {
         arrow.textContent = '→';
         if (out.cls) result.classList.add(out.cls);
@@ -631,9 +739,73 @@ function evaluateAll() {
       line.classList.add('is-error');
     }
   });
+
+  renderVarsPanel();
+}
+
+/* Store a solved/assigned value so other lines (and the sidebar) can use it */
+function registerKnownValue(name, valueExprStr) {
+  try {
+    const val = math.evaluate(valueExprStr, numScope);
+    if (typeof val === 'number' && isFinite(val)) {
+      numScope[name] = val;
+      try { nerdamer.setVar(name, String(val)); } catch {}
+      varNames.add(name);
+      knownVars.set(name, { text: fmtNum(val) });
+      return;
+    }
+    if (val && val.isComplex) {
+      numScope[name] = val;
+      try { nerdamer.setVar(name, valueExprStr); } catch {}
+      varNames.add(name);
+      knownVars.set(name, { text: fmtMath(val) });
+      return;
+    }
+  } catch {}
+  try {
+    nerdamer.setVar(name, valueExprStr);
+    varNames.add(name);
+    knownVars.set(name, { text: disp(valueExprStr) });
+  } catch {}
+}
+
+/* A variable with several candidate values (ambiguous equation/system) can't be
+   substituted into other lines, but should still show up in the sidebar. */
+function registerMultiValue(name, texts) {
+  knownVars.set(name, { text: texts.join('  or  ') });
+}
+
+/* Render the "Variables" sidebar from whatever's been solved/assigned so far */
+function renderVarsPanel() {
+  const list = document.getElementById('varsList');
+  if (!list) return;
+  const names = [...knownVars.keys()].sort((a, b) => disp(a).localeCompare(disp(b)));
+
+  if (!names.length) { list.innerHTML = '<div class="vars-empty">No variables yet</div>'; return; }
+
+  list.innerHTML = names.map(n => {
+    const info = knownVars.get(n);
+    return `<div class="var-item"><span class="var-name">${disp(n)}</span><span class="var-val">${info.text}</span></div>`;
+  }).join('');
 }
 
 function renderResult(el, out) {
+  if (out.parts && out.parts.length) {
+    el.innerHTML = '';
+    out.parts.forEach((p, i) => {
+      if (i > 0) {
+        const sep = document.createElement('div');
+        sep.className = 'lresult-or';
+        sep.textContent = 'or';
+        el.appendChild(sep);
+      }
+      const row = document.createElement('div');
+      try { row.innerHTML = katex.renderToString(p, { throwOnError: false }); }
+      catch { row.textContent = p; }
+      el.appendChild(row);
+    });
+    return;
+  }
   if (out.tex && out.cls !== 'err') {
     try { el.innerHTML = katex.renderToString(out.tex, { throwOnError: false }); return; }
     catch {}
@@ -651,7 +823,7 @@ function evalLatex(latex) {
   if (/\\frac\{d\}\{d/.test(latex))  return evalDerivative(latex);
   if (/\\int/.test(latex))           return evalIntegral(latex);
   if (/\\sum/.test(latex))           return evalSum(latex);
-  if (/\\lim/.test(latex))           return { text: 'Limits not supported yet', cls: 'err' };
+  if (/\\lim/.test(latex))           return { text: 'Limits aren’t supported yet, sorry!', cls: 'err' };
 
   const expr = latexToExpr(latex, complexMode);
   if (!expr.trim()) return null;
@@ -681,21 +853,25 @@ function assign(name, rhs) {
     if (typeof val === 'number' && isFinite(val)) {
       numScope[name] = val; varNames.add(name);
       try { nerdamer.setVar(name, String(val)); } catch {}
+      knownVars.set(name, { text: fmtNum(val) });
       return { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
     }
     if (val && val.isComplex) {
       if (!complexMode && Math.abs(val.im) > 1e-12)
-        return { text: 'undefined (not real)', cls: 'err' };
+        return { text: 'This needs an imaginary number — turn on ℂ Complex mode (top right) to see it.', cls: 'err' };
       numScope[name] = val; varNames.add(name);
+      knownVars.set(name, { text: fmtMath(val) });
       return { text: fmtMath(val), cls: null };
     }
     numScope[name] = val; varNames.add(name);
+    knownVars.set(name, { text: fmtMath(val) });
     return { text: fmtMath(val), cls: null };
   } catch {}
   try {
     const s = nerdamer(rhs); const str = s.toString();
     try { nerdamer.setVar(name, str); } catch {}
     varNames.add(name);
+    knownVars.set(name, { text: disp(str) });
     return { tex: safeTeX(s), text: disp(str), cls: 'sym' };
   } catch { throw new Error('Cannot evaluate'); }
 }
@@ -712,20 +888,26 @@ function solveEquation(expr) {
       const same = (typeof l === 'number' && typeof r === 'number')
         ? Math.abs(l - r) < 1e-9 : String(l) === String(r);
       return { text: same ? '✓  True' : '✗  False', cls: same ? 'ok' : null };
-    } catch { return { text: 'Cannot verify', cls: 'err' }; }
+    } catch { return { text: 'Couldn’t check whether this is true — check your typing.', cls: 'err' }; }
   }
   if (unknowns.length > 1)
-    return { text: `${unknowns.length} unknowns (${unknowns.map(disp).join(', ')})`, cls: 'err' };
+    return { text: `This has more than one unknown (${unknowns.map(disp).join(', ')}). Add another equation using the same variable(s) on another line and I’ll try to solve them together.`, cls: 'err' };
 
   const v = unknowns[0], dv = disp(v);
   const poly = `(${lhs})-(${rhs})`;
 
   const coeffs = polyCoeffs(poly, v);
-  if (!coeffs) return numericSolve(lhs, rhs, v);        // non-polynomial → numeric
+  if (!coeffs) {
+    const abs = tryAbsImpossible(lhs, rhs);              // |...| = negative → no solution at all, ever
+    if (abs) return abs;
+    const trig = trySimpleTrigInverse(lhs, rhs, v);      // sin(y)=1 → one principal answer, not many
+    if (trig) return trig;
+    return numericSolve(lhs, rhs, v);                    // non-polynomial → numeric
+  }
 
   let parts;
   const deg = coeffs.length - 1;
-  if (deg < 1) return { text: 'No solution', cls: null };
+  if (deg < 1) return { text: 'This equation has no solution.', cls: null };
   if (deg <= 2) parts = solveLowDegree(coeffs);         // linear / quadratic → exact
   else {                                                // cubic+ → nerdamer, then tidy
     try { parts = dedupe(splitList(nerdamer.solve(poly, v).toString()).map(cleanSolution)); }
@@ -733,14 +915,188 @@ function solveEquation(expr) {
   }
 
   if (!complexMode) parts = parts.filter(p => p.real);
-  if (!parts.length) return { text: complexMode ? 'No solution' : 'No real solution', cls: null };
+  if (!parts.length) return { text: complexMode ? 'This equation has no solution.' : 'No real number solves this — try ℂ Complex mode to see a complex answer.', cls: null };
+  if (parts.length === 1) { registerKnownValue(v, parts[0].text); return { text: null }; }
+  registerMultiValue(v, parts.map(p => p.text));
   return formatSolutions(parts, dv);
 }
 
 function formatSolutions(parts, dv) {
   return {
-    tex: parts.map(p => `${dv} = ${p.tex}`).join('\\quad \\text{or} \\quad '),
+    parts: parts.map(p => `${dv} = ${p.tex}`),
     text: parts.map(p => `${dv} = ${p.text}`).join('   or   '),
+    cls: 'num',
+  };
+}
+
+/* ============================================================
+   Systems of equations (multiple lines, multiple unknowns)
+   Groups equation-lines that share variables and, if the group is
+   "square" (as many equations as unknowns), tries to solve them together:
+   linear systems via nerdamer.solveEquations; otherwise substitution for
+   the common 2-equation/2-unknown case (e.g. x+y=5, xy=24).
+============================================================ */
+function solveSystems(linesArr) {
+  const results = new Map();
+
+  const info = linesArr.map(line => {
+    const mq = line._mq;
+    const latex = mq ? mq.latex() : '';
+    if (!latex || !latex.trim()) return null;
+    if (/\\frac\{d\}\{d/.test(latex) || /\\int/.test(latex) || /\\sum/.test(latex) || /\\lim/.test(latex)) return null;
+    let expr;
+    try { nerdExact(); expr = latexToExpr(latex, complexMode); } catch { return null; }
+    if (!expr || !expr.trim()) return null;
+    const eqMatch = expr.match(/(?<![=!<>])=(?!=)/);
+    if (!eqMatch) return null;
+    const lhs = expr.slice(0, eqMatch.index).trim();
+    const rhs = expr.slice(eqMatch.index + 1).trim();
+    const asgn = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
+    if (asgn && !/[+\-*/^]/.test(asgn[1])) return null;   // plain assignment, not a system equation
+    const unknowns = findUnknowns(expr);
+    if (unknowns.length < 2) return null;                 // single-unknown handled by the normal solver
+    return { line, lhs, rhs, unknowns };
+  });
+
+  const idxList = info.map((e, i) => (e ? i : -1)).filter(i => i >= 0);
+  const visited = new Set();
+
+  for (const i of idxList) {
+    if (visited.has(i)) continue;
+    const comp = [i]; visited.add(i);
+    let frontier = [i];
+    while (frontier.length) {
+      const next = [];
+      for (const a of frontier) {
+        for (const b of idxList) {
+          if (visited.has(b)) continue;
+          if (info[a].unknowns.some(v => info[b].unknowns.includes(v))) { visited.add(b); comp.push(b); next.push(b); }
+        }
+      }
+      frontier = next;
+    }
+    if (comp.length < 2) continue;   // no partner equation → leave the normal per-line message
+
+    const allVars = [...new Set(comp.flatMap(c => info[c].unknowns))];
+    if (allVars.length !== comp.length) continue;   // not a square system → can't uniquely solve
+
+    const eqs = comp.map(c => `(${info[c].lhs})-(${info[c].rhs})`);
+    const solved = trySolveSystem(eqs, allVars);
+    if (solved === null) continue;   // couldn't even attempt it → per-line message stands
+
+    if (!solved.length) {
+      const out = { text: 'This system has no solution — these equations contradict each other.', cls: null };
+      for (const c of comp) results.set(info[c].line, out);
+      continue;
+    }
+
+    const tuples = cleanSystemSolutions(solved, allVars);
+    let out;
+    if (tuples.length === 1) {
+      tuples[0].forEach(p => registerKnownValue(p.v, p.text));
+      out = { text: null };
+    } else {
+      if (tuples.length > 1) {
+        for (const v of allVars) registerMultiValue(v, tuples.map(t => t.find(p => p.v === v).text));
+      }
+      out = formatSystemDisplay(tuples);
+    }
+    for (const c of comp) results.set(info[c].line, out);
+  }
+
+  return results;
+}
+
+function trySolveSystem(eqs, vars) {
+  // Linear systems (any size) → nerdamer's own solver
+  try {
+    const r = nerdamer.solveEquations(eqs, vars);
+    if (Array.isArray(r) && r.length === vars.length && r.every(p => Array.isArray(p) && p.length === 2)) {
+      const sol = {};
+      for (const [v, val] of r) sol[v] = String(val);
+      if (vars.every(v => sol[v] !== undefined)) return [sol];
+    }
+  } catch {}
+
+  // Nonlinear fallback via substitution — currently 2 equations / 2 unknowns
+  if (vars.length === 2 && eqs.length === 2) return solveSystem2x2(eqs, vars);
+  return null;
+}
+
+/* Returns: an array of solutions (may be empty [] to mean "definitely no
+   solution — these equations contradict each other"), or null to mean
+   "couldn't even attempt this" (caller should fall back to the per-line message). */
+function solveSystem2x2(eqs, vars) {
+  const [v1, v2] = vars;
+  const [e1, e2] = eqs;
+  const attempts = [[e1, e2, v1, v2], [e1, e2, v2, v1], [e2, e1, v1, v2], [e2, e1, v2, v1]];
+  let sawContradiction = false;
+
+  for (const [solveEq, subEq, solveVar, otherVar] of attempts) {
+    let subs;
+    try { subs = splitList(nerdamer.solve(solveEq, solveVar).toString()); } catch { continue; }
+    if (!subs.length || subs.length > 2) continue;
+
+    const results = [];
+    for (const sExpr of subs) {
+      try {
+        const substituted = nerdamer(subEq).sub(solveVar, `(${sExpr})`).toString();
+        const expanded = nerdamer.expand(substituted).toString();
+        const coeffs = polyCoeffs(expanded, otherVar);
+        let otherRoots;
+        if (coeffs) {
+          const deg = coeffs.length - 1;
+          if (deg < 1) {
+            // the variable cancelled out entirely: a nonzero constant means these
+            // two equations contradict each other, so there's no solution at all
+            if (Math.abs(coeffs[0] || 0) > 1e-9) sawContradiction = true;
+            continue;
+          }
+          otherRoots = deg <= 2
+            ? solveLowDegree(coeffs).map(r => r.text)
+            : dedupe(splitList(nerdamer.solve(expanded, otherVar).toString()).map(cleanSolution)).map(r => r.text);
+        } else {
+          otherRoots = numericRoots(expanded, otherVar);
+        }
+        for (const ov of otherRoots) {
+          const solvedValStr = nerdamer(sExpr).sub(otherVar, `(${ov})`).toString();
+          const sol = {}; sol[solveVar] = solvedValStr; sol[otherVar] = ov;
+          results.push(sol);
+        }
+      } catch {}
+    }
+    if (results.length) return results;
+  }
+  return sawContradiction ? [] : null;
+}
+
+/* Real-valued roots of a single-variable expression set to zero (Newton fallback) */
+function numericRoots(expr, v) {
+  const f = x => { try { return math.evaluate(disp(expr), { ...numScope, [v]: x }); } catch { return NaN; } };
+  return findRealRoots(f).slice(0, 6).map(String);
+}
+
+/* Simplify + dedupe raw solved tuples, filtered to real values in Real mode */
+function cleanSystemSolutions(solved, vars) {
+  const cleaned = solved
+    .map(sol => vars.map(v => ({ v, ...rootFromExpr(sol[v]) })))
+    .filter(parts => complexMode || parts.every(p => p.real));
+
+  const seen = new Set(), deduped = [];
+  for (const parts of cleaned) {
+    const key = parts.map(p => p.text).join('|');
+    if (!seen.has(key)) { seen.add(key); deduped.push(parts); }
+  }
+  return deduped;
+}
+
+function formatSystemDisplay(deduped) {
+  if (!deduped.length)
+    return { text: complexMode ? 'This system has no solution.' : 'No real solution — try ℂ Complex mode to see a complex answer.', cls: null };
+
+  return {
+    parts: deduped.map(parts => parts.map(p => `${disp(p.v)} = ${p.tex}`).join(',\\ ')),
+    text: deduped.map(parts => parts.map(p => `${disp(p.v)} = ${p.text}`).join(', ')).join('   or   '),
     cls: 'num',
   };
 }
@@ -782,8 +1138,11 @@ function dedupe(parts) {
 
 /* Simplify an exact root expression via nerdamer → {text, tex, real} */
 function rootFromExpr(expr) {
-  let s;
-  try { s = nerdamer(expr).simplify().toString(); } catch { s = expr; }
+  let raw, s;
+  try { raw = nerdamer(expr); s = raw.simplify().toString(); } catch { s = expr; }
+  // nerdamer's simplify() sometimes rationalizes an irrational imaginary part
+  // (e.g. sqrt(-3)) into a giant ugly fraction — prefer the unsimplified exact form then.
+  if (/\d{6,}/.test(s) && raw) { try { s = raw.toString(); } catch {} }
   return { text: disp(s), tex: safeTeXStr(s), real: !/\bi\b/.test(s) };
 }
 
@@ -814,20 +1173,26 @@ function plainExpr(expr) {
         return { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
       if (val && val.isComplex) {
         if (!complexMode && Math.abs(val.im) > 1e-12)
-          return { text: 'undefined (not real)', cls: 'err' };
+          return { text: 'This needs an imaginary number — turn on ℂ Complex mode (top right) to see it.', cls: 'err' };
         return { tex: complexTeX(val), text: fmtMath(val), cls: 'num' };
       }
       if (typeof val === 'number' && !isFinite(val))
-        return { text: 'undefined', cls: 'err' };
+        return { text: 'That’s undefined — probably dividing by zero.', cls: 'err' };
       return { text: fmtMath(val), cls: null };
     }
   } catch (e) { mErr = e; }
+  // Factorial of a negative number: mathjs already gives a clear reason — use it
+  // instead of falling through to nerdamer's unhelpful unevaluated "factorial(-1)".
+  if (mErr && /non-negative/i.test(mErr.message))
+    return { text: 'That’s undefined — factorial only works on non-negative numbers.', cls: 'err' };
 
   try {
     const s = nerdamer(expr); const str = s.toString();
     const dstr = disp(str);
     // A lone variable (e.g. `i` or `x` on its own) has nothing to compute → show nothing
     if (/^[a-zA-Z]\w*$/.test(dstr)) return { text: null };
+    // The variables cancelled out and left a plain number (e.g. x^0, x/x) → color it like a number
+    if (/^-?\d+(\.\d+)?$/.test(dstr)) return { tex: dstr, text: dstr, cls: 'num' };
     if (str) return { tex: safeTeX(s), text: dstr, cls: 'sym' };
   } catch {}
   // Undefined variable(s) with nothing to simplify → stay quiet rather than error
@@ -856,7 +1221,7 @@ function evalDerivative(latex) {
   const v = greekName(m[1]);
   const operandLatex = latex.slice(m.index + m[0].length);
   const operand = stripOuter(latexToExpr(operandLatex, complexMode));
-  if (!operand) return { text: 'd/dx of what?', cls: 'err' };
+  if (!operand) return { text: 'Type something after d/dx to take its derivative.', cls: 'err' };
   const d = nerdamer.diff(operand, v);
   const s = nerdamer(d.toString()).simplify();
   return { tex: safeTeX(s), text: disp(s.toString()), cls: 'sym' };
@@ -883,14 +1248,19 @@ function evalIntegral(latex) {
 }
 
 function evalSum(latex) {
+  const HELP = 'To type a sum by hand: type the start value, press Tab (or →) to jump to the top limit, type the end value, press Tab (or →) again, then type what to add up. Or use the Σ button under "More functions" to build it for you.';
   const m = latex.match(/\\sum_\{([a-zA-Z])\s*=\s*([^}]*)\}\^\{([^}]*)\}/);
-  if (!m) return { text: 'Usage: Σ from the palette', cls: 'err' };
+  if (!m || !m[3].trim()) return { text: HELP, cls: 'err' };   // empty top limit → Tab was never pressed
   const v = m[1];
-  const lo = Math.round(math.evaluate(stripOuter(latexToExpr(m[2], complexMode)), numScope));
-  const hi = Math.round(math.evaluate(stripOuter(latexToExpr(m[3], complexMode)), numScope));
+  let lo, hi;
+  try {
+    lo = Math.round(math.evaluate(stripOuter(latexToExpr(m[2], complexMode)), numScope));
+    hi = Math.round(math.evaluate(stripOuter(latexToExpr(m[3], complexMode)), numScope));
+  } catch { return { text: HELP, cls: 'err' }; }
+  if (!isFinite(lo) || !isFinite(hi)) return { text: HELP, cls: 'err' };
   const rest = latex.slice(m.index + m[0].length);
   const body = stripOuter(latexToExpr(rest, complexMode)) || '0';
-  if (hi - lo > 100000) return { text: 'Range too large', cls: 'err' };
+  if (hi - lo > 100000) return { text: 'That range is too big — try a smaller range for the sum.', cls: 'err' };
   let acc = 0;
   for (let k = lo; k <= hi; k++) acc += Number(math.evaluate(body, { ...numScope, [v]: k }));
   return { tex: fmtNumTeX(acc), text: fmtNum(acc), cls: 'num' };
@@ -907,22 +1277,73 @@ function simpson(f, a, b, n = 1000) {
 /* ============================================================
    Numeric fallback equation solver (Newton)
 ============================================================ */
-function numericSolve(lhs, rhs, v) {
-  const f = x => { try { return math.evaluate(lhs, { ...numScope, [v]: x }) - math.evaluate(rhs, { ...numScope, [v]: x }); } catch { return NaN; } };
+/* Real roots of f(x)=0, nearest-to-zero first (Newton's method from many starting points) */
+function findRealRoots(f) {
   const starts = [-1e3,-200,-50,-20,-10,-5,-3,-2,-1,-.5,0,.5,1,2,3,5,10,20,50,200,1e3];
   const found = [];
   for (const x0 of starts) {
     const s = newton(f, x0);
     if (s !== null) { const r = Math.round(s*1e9)/1e9; if (!found.some(q => Math.abs(q-r)<1e-6)) found.push(r); }
   }
-  if (!found.length) return { text: 'No real solution found', cls: null };
+  found.sort((a, b) => Math.abs(a) - Math.abs(b));
+  return found;
+}
+
+/* |...| = -5 (or -|...| = 5) can never work out — not in real numbers, not in
+   complex numbers either, since absolute value/modulus is always ≥ 0. Say so
+   directly instead of letting Newton's method fail silently. */
+function tryAbsImpossible(lhs, rhs) {
+  const L = stripOuter(lhs), R = stripOuter(rhs);
+  for (const [absSide, otherSide] of [[L, R], [R, L]]) {
+    const negMatch = absSide.match(/^-\s*abs\(.+\)$/);
+    const plainMatch = absSide.match(/^abs\(.+\)$/);
+    if (!negMatch && !plainMatch) continue;
+    let c;
+    try { c = math.evaluate(otherSide, numScope); } catch { continue; }
+    if (typeof c !== 'number' || !isFinite(c)) continue;
+    const impossible = negMatch ? c > 0 : c < 0;
+    if (impossible) return { text: 'No solution — absolute value is never negative, so this can’t work out in any number system.', cls: null };
+  }
+  return null;
+}
+
+/* sin(y)=1, cos(y)=0.5, tan(y)=2, etc. — give the one principal answer
+   instead of Newton's method finding a pile of periodic repeats. */
+function trySimpleTrigInverse(lhs, rhs, v) {
+  if (complexMode) return null;   // real inverse trig only for now
+  const L = stripOuter(lhs), R = stripOuter(rhs);
+  let m = L.match(/^(sin|cos|tan)\((.+)\)$/);
+  let constSide = R;
+  if (!m) { m = R.match(/^(sin|cos|tan)\((.+)\)$/); constSide = L; }
+  if (!m) return null;
+  if (stripOuter(m[2]) !== v) return null;   // only bare sin(y), not sin(2y+1)
+
+  let c;
+  try { c = math.evaluate(constSide, numScope); } catch { return null; }
+  if (typeof c !== 'number' || !isFinite(c)) return null;
+
+  const fn = m[1];
+  if ((fn === 'sin' || fn === 'cos') && Math.abs(c) > 1)
+    return { text: `No real number solves this — ${fn} only ever gives values between −1 and 1.`, cls: null };
+
+  const val = fn === 'sin' ? Math.asin(c) : fn === 'cos' ? Math.acos(c) : Math.atan(c);
+  registerKnownValue(v, String(val));
+  return { text: null };
+}
+
+function numericSolve(lhs, rhs, v) {
+  const f = x => { try { return math.evaluate(lhs, { ...numScope, [v]: x }) - math.evaluate(rhs, { ...numScope, [v]: x }); } catch { return NaN; } };
+  const found = findRealRoots(f);
+  if (!found.length) return { text: 'Couldn’t find a real number that solves this.', cls: null };
+  if (found.length === 1) { registerKnownValue(v, String(found[0])); return { text: null }; }
   const dv = disp(v);
-  const extra = found.length > 6 ? '   …' : '';
-  found.sort((a, b) => Math.abs(a) - Math.abs(b));   // roots nearest zero first
   const shown = found.slice(0, 6).sort((a, b) => a - b);
+  registerMultiValue(v, shown.map(s => `≈ ${fmtNum(s)}`));
+  const parts = shown.map(s => `${dv} \\approx ${fmtNum(s)}`);
+  if (found.length > 6) parts.push('\\dots');
   return {
-    tex: shown.map(s => `${dv} \\approx ${fmtNum(s)}`).join('\\quad \\text{or} \\quad ') + (extra ? '\\;\\dots' : ''),
-    text: shown.map(s => `${dv} ≈ ${fmtNum(s)}`).join('   or   ') + extra,
+    parts,
+    text: shown.map(s => `${dv} ≈ ${fmtNum(s)}`).join('   or   ') + (found.length > 6 ? '   …' : ''),
     cls: 'num',
   };
 }
@@ -1141,17 +1562,27 @@ function fmtMath(v) {
   try { return JSON.stringify(v); } catch { return String(v); }
 }
 function niceError(msg = '') {
-  return disp(msg).replace(/^Error:\s*/i, '').replace(/Unexpected.*/i, 'Syntax error')
-    .replace(/Cannot read prop.*/i, 'Syntax error').replace(/undefined symbol\s*/i, 'unknown: ').slice(0, 70);
+  const m = disp(msg);
+  const bad = m.match(/undefined symbol\s*(\S+)/i);
+  if (bad) return `I don't recognize "${bad[1]}" — check the spelling or pick it from the keyboard below.`;
+  if (/unexpected|cannot read prop/i.test(m)) return 'That doesn’t look like valid math — check for typos or a missing symbol.';
+  if (/cannot evaluate/i.test(m)) return 'I couldn’t work that out — check your expression.';
+  return 'Something’s not right here — check your typing.';
 }
 
 /* ── UI ── */
 function allLines() { return [...document.querySelectorAll('#lines .line')]; }
 function renumber() { allLines().forEach((l, i) => l.querySelector('.lnum').textContent = i + 1); }
 function updateStatus() { document.getElementById('lineCount').textContent = allLines().length; }
-function toggleKb(h) { const b = document.getElementById('kbBody'), a = h.querySelector('span'); const o = b.style.display !== 'none'; b.style.display = o ? 'none' : ''; a.textContent = o ? '▶' : '▼'; }
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePalette(); });
+
+window.addEventListener('beforeunload', e => {
+  const hasContent = allLines().some(l => l._mq && l._mq.latex().trim() !== '');
+  if (!hasContent) return;
+  e.preventDefault();
+  e.returnValue = 'If you leave this page your changes will be lost.';
+});
 </script>
 </body>
 </html>
