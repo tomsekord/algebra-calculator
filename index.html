@@ -60,7 +60,7 @@
 
     .app-row {
       flex:1; min-width:0; max-width:1180px; width:100%; margin:14px auto 0; padding:0 18px;
-      display:flex; gap:16px; align-items:flex-start;
+      display:flex; gap:16px; align-items:stretch;
     }
     main { flex:1; min-width:0; padding:0 0 20px; }
 
@@ -460,11 +460,27 @@
 ============================================================ */
 const MQ = MathQuill.getInterface(2);
 const IVAR = 'ireservedvar';          // stand-in for `i` when in Real mode (no underscore: nerdamer's toTeX() treats "_" as a LaTeX subscript separator, which broke disp()'s literal-string replace)
+
+/* mathjs treats these bare single letters as built-in unit symbols (byte, gram,
+   hour, liter, meter, second, tonne, ampere, coulomb, farad, henry, joule,
+   kelvin, newton, siemens, tesla, volt, watt) instead of algebraic variables —
+   e.g. math.evaluate('2*t') silently returns "2 tonnes", and 't+1' throws a raw
+   "Unexpected type of argument" error. Also covers uppercase E, which mathjs
+   quietly aliases to Euler's number — but unlike lowercase e (a near-universal
+   constant), uppercase E is overwhelmingly used for "Energy" in algebra/physics,
+   so it's treated as a free variable here rather than a locked constant.
+   Alias them all the same way `i` is aliased, unconditionally (this isn't a
+   real/complex-mode thing, it's a mathjs quirk). */
+const UNIT_ALIASES = {};
+for (const letter of ['b','g','h','l','m','s','t','A','B','C','E','F','H','J','K','L','N','S','T','V','W']) {
+  UNIT_ALIASES[letter] = letter + 'ReservedVar';
+}
 let complexMode = false;
 let numScope = {}, varNames = new Set();
 let knownVars = new Map();   // name -> {text} for the sidebar; separate from numScope since
                               // ambiguous (multi-valued) variables can't be substituted elsewhere
                               // but should still show up so the user can see "we found these values"
+let primaryDefLine = new Map();   // varName -> the one line that "owns" plain assignment to it
 let activeMQ = null, activeLine = null;
 
 /* MathQuill mutates the config object it's given (rewrites .handlers into its
@@ -706,41 +722,113 @@ function setComplex(on) {
 
 function evaluateAll() {
   try { nerdamer.clearVars(); } catch {}
-  numScope = {}; varNames = new Set(); knownVars = new Map();
+  numScope = {}; varNames = new Set(); knownVars = new Map(); primaryDefLine = new Map();
 
   const linesArr = allLines();
   const systemResults = solveSystems(linesArr);
+  // a=b+1, b=a+1 would otherwise make nerdamer's own variable table
+  // self-referential and hang the whole page trying to resolve it — catch that
+  // before it ever reaches nerdamer.setVar.
+  const circular = detectCircularAssignments(linesArr);
 
+  // First simple "name = ..." line for each name "owns" plain assignment to it;
+  // any later line reusing that name is treated as an equation using the known
+  // value instead of a silent redefinition (see evalExpr).
   linesArr.forEach(line => {
     const mq = line._mq;
     const latex = mq ? mq.latex() : '';
-    const arrow = line.querySelector('.larrow');
-    const result = line.querySelector('.lresult');
-
-    line.classList.remove('is-error', 'is-result');
-    arrow.textContent = '';
-    result.textContent = '';
-    result.className = 'lresult';
-
     if (!latex || !latex.trim()) return;
-
-    try {
-      const out = systemResults.get(line) || evalLatex(latex);
-      if (out && out.text != null) {
-        arrow.textContent = '→';
-        if (out.cls) result.classList.add(out.cls);
-        line.classList.add(out.cls === 'err' ? 'is-error' : 'is-result');
-        renderResult(result, out);
-      }
-    } catch (err) {
-      arrow.textContent = '→';
-      result.textContent = niceError(err.message);
-      result.classList.add('err');
-      line.classList.add('is-error');
-    }
+    let expr;
+    try { expr = latexToExpr(latex, complexMode); } catch { return; }
+    const m = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
+    if (m && !/[+\-*/^]/.test(m[1]) && !primaryDefLine.has(m[1])) primaryDefLine.set(m[1], line);
   });
 
+  // Run multiple passes so forward references resolve — e.g. line 3 using a
+  // variable defined on line 5 — like a spreadsheet, not strictly top-to-bottom.
+  // numScope/knownVars persist and accumulate across passes (not reset per pass),
+  // so once a later line's value becomes known, an earlier line that referenced
+  // it picks it up on the next pass. Cheap to just always run a few passes given
+  // how few lines a calculator like this typically has.
+  const PASSES = 5;
+  for (let pass = 0; pass < PASSES; pass++) {
+    linesArr.forEach(line => {
+      const mq = line._mq;
+      const latex = mq ? mq.latex() : '';
+      const arrow = line.querySelector('.larrow');
+      const result = line.querySelector('.lresult');
+
+      line.classList.remove('is-error', 'is-result');
+      arrow.textContent = '';
+      result.textContent = '';
+      result.className = 'lresult';
+
+      if (!latex || !latex.trim()) return;
+
+      if (circular.has(line)) {
+        arrow.textContent = '→';
+        result.textContent = 'Circular reference — this depends on itself through other lines.';
+        result.classList.add('err');
+        line.classList.add('is-error');
+        return;
+      }
+
+      try {
+        const out = systemResults.get(line) || evalLatex(latex, line);
+        if (out && out.text != null) {
+          arrow.textContent = '→';
+          if (out.cls) result.classList.add(out.cls);
+          line.classList.add(out.cls === 'err' ? 'is-error' : 'is-result');
+          renderResult(result, out);
+        }
+      } catch (err) {
+        arrow.textContent = '→';
+        result.textContent = niceError(err.message);
+        result.classList.add('err');
+        line.classList.add('is-error');
+      }
+    });
+  }
+
   renderVarsPanel();
+}
+
+/* Find simple assignment lines (name = expr) whose dependencies form a cycle
+   (a depends on b, b depends on a, etc.) — returns the set of involved <div class="line"> elements. */
+function detectCircularAssignments(linesArr) {
+  const assignInfo = new Map();   // varName -> { line, deps: Set<varName> }
+  for (const line of linesArr) {
+    const mq = line._mq;
+    const latex = mq ? mq.latex() : '';
+    if (!latex || !latex.trim()) continue;
+    if (/\\frac\{d\}\{d/.test(latex) || /\\int/.test(latex) || /\\sum/.test(latex) || /\\lim/.test(latex)) continue;
+    let expr;
+    try { expr = latexToExpr(latex, complexMode); } catch { continue; }
+    const m = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
+    if (!m || /[+\-*/^]/.test(m[1])) continue;   // not a simple "name = ..." assignment
+    const name = m[1];
+    // Scan only the right-hand side — scanning the whole "name=expr" string would
+    // always "find" the LHS name itself and falsely flag every assignment as self-referential.
+    const deps = new Set(findUnknowns(m[2]));
+    assignInfo.set(name, { line, deps });
+  }
+
+  const circularLines = new Set();
+  const state = new Map();   // varName -> 0 unvisited, 1 in-progress, 2 done
+  function dfs(name) {
+    if (!assignInfo.has(name)) return false;
+    const st = state.get(name);
+    if (st === 1) return true;    // back-edge to something still on the stack → cycle
+    if (st === 2) return false;
+    state.set(name, 1);
+    let cyc = false;
+    for (const d of assignInfo.get(name).deps) if (dfs(d)) cyc = true;
+    state.set(name, 2);
+    if (cyc) circularLines.add(assignInfo.get(name).line);
+    return cyc;
+  }
+  for (const name of assignInfo.keys()) dfs(name);
+  return circularLines;
 }
 
 /* Store a solved/assigned value so other lines (and the sidebar) can use it */
@@ -816,8 +904,14 @@ function renderResult(el, out) {
 /* Keep nerdamer in exact-symbolic mode (some ops flip PARSE2NUMBER on) */
 function nerdExact() { try { nerdamer.getCore().Settings.PARSE2NUMBER = false; } catch {} }
 
+/* If `name` was registered as a known value on an earlier evaluation pass,
+   nerdamer.setVar left it in nerdamer's own symbol table — so nerdamer.coeffs()/
+   .solve() would silently substitute that stale value instead of treating `name`
+   as the unknown we're trying to solve for. Clear it right before solving for it. */
+function freeVar(name) { try { nerdamer.setVar(name, 'delete'); } catch {} }
+
 /* ── Route a line by its LaTeX ── */
-function evalLatex(latex) {
+function evalLatex(latex, line) {
   nerdExact();
   // High-level notation detection (before generic conversion)
   if (/\\frac\{d\}\{d/.test(latex))  return evalDerivative(latex);
@@ -827,11 +921,11 @@ function evalLatex(latex) {
 
   const expr = latexToExpr(latex, complexMode);
   if (!expr.trim()) return null;
-  return evalExpr(expr);
+  return evalExpr(expr, line);
 }
 
 /* ── Evaluate a converted expression ── */
-function evalExpr(expr) {
+function evalExpr(expr, line) {
   // Symbolic word-commands: factor(...), expand(...), simplify(...)
   const cmd = expr.match(/^(factor|expand|simplify)\((.*)\)$/s);
   if (cmd) return symbolicCmd(cmd[1], cmd[2]);
@@ -843,7 +937,17 @@ function evalExpr(expr) {
 
   // Assignment:  <name> = <value>
   const asgn = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
-  if (asgn && !/[+\-*/^]/.test(asgn[1])) return assign(asgn[1], asgn[2]);
+  if (asgn && !/[+\-*/^]/.test(asgn[1])) {
+    // If some OTHER, earlier line already owns this name (e.g. "x=5" on line 1),
+    // a later "x=y+1" isn't a redefinition — it's an equation relating the known
+    // x to y, solvable for y. But the owning line itself must keep reassigning
+    // normally on every pass, or multi-pass evaluation would see its own
+    // previously-set value and mistake itself for a "later reuse".
+    const owner = primaryDefLine.get(asgn[1]);
+    if (owner && owner !== line && Object.prototype.hasOwnProperty.call(numScope, asgn[1]))
+      return solveEquation(`(${numScope[asgn[1]]})=(${asgn[2]})`);
+    return assign(asgn[1], asgn[2]);
+  }
 
   // Equation
   if (/(?<![=!<>])=(?!=)/.test(expr)) return solveEquation(expr);
@@ -852,7 +956,10 @@ function evalExpr(expr) {
   return plainExpr(expr);
 }
 
+const RESERVED_CONSTANTS = new Set(['pi', 'e', 'tau', 'phi', 'i', 'Infinity', 'NaN']);
 function assign(name, rhs) {
+  if (RESERVED_CONSTANTS.has(name))
+    return { text: `"${disp(name)}" is a reserved constant — pick a different variable name.`, cls: 'err' };
   try {
     const val = math.evaluate(rhs, numScope);
     if (typeof val === 'number' && isFinite(val)) {
@@ -915,6 +1022,7 @@ function solveEquation(expr) {
   if (deg < 1) return { text: 'This equation has no solution.', cls: null };
   if (deg <= 2) parts = solveLowDegree(coeffs);         // linear / quadratic → exact
   else {                                                // cubic+ → nerdamer, then tidy
+    freeVar(v);
     try { parts = dedupe(splitList(nerdamer.solve(poly, v).toString()).map(cleanSolution)); }
     catch { return numericSolve(lhs, rhs, v); }
   }
@@ -987,7 +1095,15 @@ function solveSystems(linesArr) {
 
     const eqs = comp.map(c => `(${info[c].lhs})-(${info[c].rhs})`);
     const solved = trySolveSystem(eqs, allVars);
-    if (solved === null) continue;   // couldn't even attempt it → per-line message stands
+    if (solved === null) {
+      // A genuinely square system (right number of equations), just beyond what the
+      // solver supports (3+ variable nonlinear systems aren't attempted) — say so
+      // plainly instead of the generic "add another equation" message, which would
+      // wrongly imply the user is missing an equation when they already gave enough.
+      const out = { text: `This is a system of ${comp.length} equations and ${comp.length} unknowns, but it's too complex for me to solve automatically — I can only handle linear systems of any size, or 2-variable nonlinear systems like x+y=5, xy=24.`, cls: 'err' };
+      for (const c of comp) results.set(info[c].line, out);
+      continue;
+    }
 
     if (!solved.length) {
       const out = { text: 'This system has no solution — these equations contradict each other.', cls: null };
@@ -1039,6 +1155,7 @@ function solveSystem2x2(eqs, vars) {
 
   for (const [solveEq, subEq, solveVar, otherVar] of attempts) {
     let subs;
+    freeVar(solveVar); freeVar(otherVar);
     try { subs = splitList(nerdamer.solve(solveEq, solveVar).toString()); } catch { continue; }
     if (!subs.length || subs.length > 2) continue;
 
@@ -1109,6 +1226,7 @@ function formatSystemDisplay(deduped) {
 /* Extract numeric polynomial coefficients [c0, c1, …]; null if non-polynomial */
 function polyCoeffs(poly, v) {
   let raw;
+  freeVar(v);
   try { raw = splitList(nerdamer.coeffs(poly, v).toString()); } catch { return null; }
   if (!raw.length) return null;
   const c = [];
@@ -1143,11 +1261,14 @@ function dedupe(parts) {
 
 /* Simplify an exact root expression via nerdamer → {text, tex, real} */
 function rootFromExpr(expr) {
-  let raw, s;
-  try { raw = nerdamer(expr); s = raw.simplify().toString(); } catch { s = expr; }
+  let s;
+  try { s = nerdamer(expr).simplify().toString(); } catch { s = expr; }
   // nerdamer's simplify() sometimes rationalizes an irrational imaginary part
   // (e.g. sqrt(-3)) into a giant ugly fraction — prefer the unsimplified exact form then.
-  if (/\d{6,}/.test(s) && raw) { try { s = raw.toString(); } catch {} }
+  // Must re-parse `expr` fresh here: .simplify() mutates its receiver in place, so
+  // reusing the earlier nerdamer(expr) reference would read back corrupted state
+  // (e.g. sqrt(4e300)/2 simplifying in-place down to a bare "1").
+  if (/\d{6,}/.test(s)) { try { s = nerdamer(expr).toString(); } catch {} }
   return { text: disp(s), tex: safeTeXStr(s), real: !/\bi\b/.test(s) };
 }
 
@@ -1169,10 +1290,31 @@ function cleanSolution(part) {
   return { text: d, tex: safeTeXStr(part), real: !/\bi\b/.test(d) };
 }
 
+/* mathjs's ^ operator always uses the complex principal branch for a fractional
+   exponent, so (-8)^(1/3) numerically comes out as a complex number instead of
+   the real -2 that an odd root of a negative number should give. Rewrite that
+   specific literal pattern to mathjs's dedicated nthRoot(), which gets it right —
+   but only for numeric evaluation; nerdamer (used for symbolic/equation solving)
+   doesn't know nthRoot(), so the original ^(1/n) form must stay untouched there. */
+function preferRealOddRoot(expr) {
+  // Covers the various bracket shapes latexToExpr can produce for the same math:
+  // \sqrt[3]{-8} → "1/(3)", (-8)^{1/3} → "1/3", (-8)^{\frac{2}{3}} → "(2)/(3)".
+  // General base^(m/n): take the (correctly real, odd-n) root first, then raise
+  // to the m power — e.g. (-8)^(2/3) = (nthRoot(-8,3))^2 = 4, not a complex number.
+  let out = expr.replace(/\(*(-?\d+(?:\.\d+)?)\)*\^\(+\(?(\d+)\)?\/\(?(\d+)\)?\)+/g, (match, base, m, n) => {
+    const nn = parseInt(n, 10), mm = parseInt(m, 10);
+    return (Number(base) < 0 && nn % 2 === 1) ? `(nthRoot(${base},${nn}))^${mm}` : match;
+  });
+  let opens = 0, closes = 0;
+  for (const ch of out) { if (ch === '(') opens++; else if (ch === ')') closes++; }
+  while (closes > opens && out.endsWith(')')) { out = out.slice(0, -1); closes--; }
+  return out;
+}
+
 function plainExpr(expr) {
   let mErr;
   try {
-    const val = math.evaluate(expr, numScope);
+    const val = math.evaluate(preferRealOddRoot(expr), numScope);
     if (val !== undefined) {
       if (typeof val === 'number' && isFinite(val))
         return { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
@@ -1181,8 +1323,10 @@ function plainExpr(expr) {
           return { text: 'This needs an imaginary number — turn on ℂ Complex mode (top right) to see it.', cls: 'err' };
         return { tex: complexTeX(val), text: fmtMath(val), cls: 'num' };
       }
-      if (typeof val === 'number' && !isFinite(val))
-        return { text: 'That’s undefined — probably dividing by zero.', cls: 'err' };
+      if (typeof val === 'number' && !isFinite(val)) {
+        if (Number.isNaN(val) || expr.includes('/')) return { text: 'That’s undefined — probably dividing by zero.', cls: 'err' };
+        return { text: 'That number is too big for me to calculate exactly.', cls: 'err' };
+      }
       return { text: fmtMath(val), cls: null };
     }
   } catch (e) { mErr = e; }
@@ -1464,6 +1608,9 @@ function latexToExpr(tex, complex) {
 
   let expr = parseSeq(null);
   if (!complex) expr = expr.replace(/\bi\b/g, IVAR);
+  for (const [letter, alias] of Object.entries(UNIT_ALIASES)) {
+    expr = expr.replace(new RegExp(`\\b${letter}\\b`, 'g'), alias);
+  }
   return expr;
 }
 
@@ -1520,8 +1667,12 @@ function splitList(str) {
   return parts;
 }
 
-/* Replace internal IVAR back to i for display */
-function disp(str) { return String(str).replace(new RegExp(IVAR, 'g'), 'i'); }
+/* Replace internal IVAR/unit aliases back to their real letters for display */
+function disp(str) {
+  let s = String(str).replace(new RegExp(IVAR, 'g'), 'i');
+  for (const [letter, alias] of Object.entries(UNIT_ALIASES)) s = s.replace(new RegExp(alias, 'g'), letter);
+  return s;
+}
 
 function safeTeX(x) {
   try { if (x && typeof x.toTeX === 'function') return disp(x.toTeX()); } catch {}
@@ -1532,14 +1683,14 @@ function safeTeXStr(str) { try { return disp(nerdamer(str).toTeX()); } catch { r
 function fmtNum(x) {
   if (typeof x !== 'number' || !isFinite(x)) return String(x);
   const r = Math.round(x);
-  if (Math.abs(x - r) < 1e-9) return String(r);
+  if (Math.abs(x - r) < 1e-10) return String(r);
   for (let d = 2; d <= 1000; d++) { const n = Math.round(x*d); if (n !== 0 && Math.abs(n/d - x) < 1e-9 && Math.abs(n) <= d*25) return `${n}/${d}`; }
   return parseFloat(x.toPrecision(10)).toString();
 }
 function fmtNumTeX(x) {
   if (typeof x !== 'number' || !isFinite(x)) return String(x);
   const r = Math.round(x);
-  if (Math.abs(x - r) < 1e-9) return String(r);
+  if (Math.abs(x - r) < 1e-10) return String(r);
   for (let d = 2; d <= 1000; d++) { const n = Math.round(x*d); if (n !== 0 && Math.abs(n/d - x) < 1e-9 && Math.abs(n) <= d*25) return `\\frac{${n}}{${d}}`; }
   return parseFloat(x.toPrecision(10)).toString();
 }
