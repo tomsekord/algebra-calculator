@@ -490,7 +490,7 @@ function makeMQConfig() {
   return {
     spaceBehavesLikeTab: true,
     autoCommands: 'pi tau theta alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma phi chi psi omega sqrt sum prod int infty',
-    autoOperatorNames: 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh ln log exp abs sign floor ceil round gcd lcm mod det factor expand simplify factorial',
+    autoOperatorNames: 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh ln log exp abs sign floor ceil round gcd lcm mod det factor expand simplify factorial lim',
     handlers: {
       edit: mq => { onFocusField(mq); scheduleEval(); },
       enter: mq => enterFrom(mq),
@@ -621,6 +621,17 @@ const K = {
   type(t)  { const mq = this.ensure(); if (mq) { mq.typedText(t); mq.focus(); scheduleEval(); } },
   cmd(c)   { const mq = this.ensure(); if (mq) { mq.cmd(c); mq.focus(); scheduleEval(); } },
   write(l) { const mq = this.ensure(); if (mq) { mq.write(l); mq.focus(); scheduleEval(); } },
+  // Like write(), but for templates ending in an empty "\left(\right)" operand
+  // (Derivative, Integral, Summation, Limit) — mq.write() leaves the cursor
+  // AFTER the whole inserted template, not inside the placeholder parens, so
+  // typing the operand right away (e.g. a fraction) would wrap the entire
+  // template into the new fraction's numerator. `leftSteps` walks the cursor
+  // back inside the parens: 1 for templates ending right at "\right)", 3 for
+  // ones with a trailing "dx" after it.
+  writeTemplate(l, leftSteps) {
+    const mq = this.ensure();
+    if (mq) { mq.write(l); for (let i = 0; i < leftSteps; i++) mq.keystroke('Left'); mq.focus(); scheduleEval(); }
+  },
   backspace(){ const mq = this.ensure(); if (mq) { mq.keystroke('Backspace'); mq.focus(); scheduleEval(); } },
   pow2()   { const mq = this.ensure(); if (mq) { mq.cmd('^'); mq.typedText('2'); mq.keystroke('Right'); mq.focus(); scheduleEval(); } },
   fn(name) { this.type(name + '('); },
@@ -638,11 +649,11 @@ const K = {
 ============================================================ */
 const PALETTE = {
   'Calculus': [
-    { sym: 'd/dx', name: 'Derivative', act: () => K.write('\\frac{d}{dx}\\left(\\right)') },
-    { sym: '∫ dx', name: 'Integral',   act: () => K.write('\\int\\left(\\right)dx') },
-    { sym: '∫ᵇₐ',  name: 'Definite integral', act: () => K.write('\\int_{0}^{1}\\left(\\right)dx') },
-    { sym: 'Σ',    name: 'Summation',  act: () => K.write('\\sum_{n=1}^{10}\\left(\\right)') },
-    { sym: 'lim',  name: 'Limit',      act: () => K.write('\\lim_{x\\to0}') },
+    { sym: 'd/dx', name: 'Derivative', act: () => K.writeTemplate('\\frac{d}{dx}\\left(\\right)', 1) },
+    { sym: '∫ dx', name: 'Integral',   act: () => K.writeTemplate('\\int\\left(\\right)dx', 3) },
+    { sym: '∫ᵇₐ',  name: 'Definite integral', act: () => K.writeTemplate('\\int_{0}^{1}\\left(\\right)dx', 3) },
+    { sym: 'Σ',    name: 'Summation',  act: () => K.writeTemplate('\\sum_{n=1}^{10}\\left(\\right)', 1) },
+    { sym: 'lim',  name: 'Limit',      act: () => K.writeTemplate('\\lim_{x\\to0}\\left(\\right)', 1) },
   ],
   'Algebra': [
     { sym: 'factor',   name: 'Factor',   act: () => K.type('factor(') },
@@ -917,7 +928,7 @@ function evalLatex(latex, line) {
   if (/\\frac\{d\}\{d/.test(latex))  return evalDerivative(latex);
   if (/\\int/.test(latex))           return evalIntegral(latex);
   if (/\\sum/.test(latex))           return evalSum(latex);
-  if (/\\lim/.test(latex))           return { text: 'Limits aren’t supported yet, sorry!', cls: 'err' };
+  if (/\\lim/.test(latex))           return evalLimit(latex);
 
   const expr = latexToExpr(latex, complexMode);
   if (!expr.trim()) return null;
@@ -1377,8 +1388,18 @@ function evalDerivative(latex) {
 }
 
 function evalIntegral(latex) {
-  const m = latex.match(/\\int(?:_\{([^}]*)\})?(?:\^\{([^}]*)\})?/);
-  const lowerL = m[1], upperL = m[2];
+  // MathQuill re-serializes single-character sub/superscripts without braces
+  // (e.g. "_0^1" instead of "_{0}^{1}") once you re-read .latex() after any
+  // edit — so bounds must be matched as EITHER "{...}" OR a single bare token.
+  const m = latex.match(/\\int(?:_(\{[^}]*\}|[^\s{}]))?(?:\^(\{[^}]*\}|[^\s{}]))?/);
+  const unwrap = s => s == null ? null : (s[0] === '{' ? s.slice(1, -1) : s);
+  // \int also always carries hidden limit slots that render invisible when
+  // untouched but can serialize as whitespace ("_{ }^{ }") rather than being
+  // omitted — treat blank/whitespace-only bounds as "no bounds given"
+  // (indefinite integral), not as an actual 0-to-0 definite integral.
+  const rawLower = unwrap(m[1]), rawUpper = unwrap(m[2]);
+  const lowerL = rawLower && rawLower.trim() ? rawLower : null;
+  const upperL = rawUpper && rawUpper.trim() ? rawUpper : null;
   let rest = latex.slice(m.index + m[0].length);
   // trailing differential: d<var>
   const dm = rest.match(/(.*)d\s*([a-zA-Z])\s*$/s);
@@ -1413,6 +1434,75 @@ function evalSum(latex) {
   let acc = 0;
   for (let k = lo; k <= hi; k++) acc += Number(math.evaluate(body, { ...numScope, [v]: k }));
   return { tex: fmtNumTeX(acc), text: fmtNum(acc), cls: 'num' };
+}
+
+function evalLimit(latex) {
+  const HELP = 'Type a limit like lim as x→0, then the expression to approach it with.';
+  const m = latex.match(/\\lim_\{([a-zA-Z]|\\[a-zA-Z]+)\\to\s*(-)?(\\infty|[^}]*)\}/);
+  if (!m) return { text: HELP, cls: 'err' };
+  const v = greekName(m[1]);
+  const neg = !!m[2];
+  const targetLatex = m[3];
+  const rest = latex.slice(m.index + m[0].length);
+  const body = stripOuter(latexToExpr(rest, complexMode));
+  if (!body) return { text: 'Type an expression after the limit to evaluate it.', cls: 'err' };
+
+  let point;
+  if (targetLatex === '\\infty') {
+    point = neg ? -Infinity : Infinity;
+  } else {
+    try { point = Number(math.evaluate(stripOuter(latexToExpr(targetLatex, complexMode)), numScope)); }
+    catch { return { text: 'Couldn’t understand what value to approach — try a plain number.', cls: 'err' }; }
+    if (neg) point = -point;
+    if (!isFinite(point)) return { text: HELP, cls: 'err' };
+  }
+
+  const f = x => {
+    try { const r = math.evaluate(body, { ...numScope, [v]: x }); return typeof r === 'number' ? r : NaN; }
+    catch { return NaN; }
+  };
+  // Finite-difference estimates near a limit inherently carry floating-point
+  // noise (e.g. 1.999999994 instead of 2) — snap results that are extremely
+  // close to a whole number, since that noise is far smaller than any
+  // legitimately-fractional answer would be.
+  const snap = v => Math.abs(v - Math.round(v)) < 1e-6 ? Math.round(v) : v;
+  const numResult = val => ({ tex: fmtNumTeX(snap(val)), text: fmtNum(snap(val)), cls: 'num' });
+
+  if (!isFinite(point)) {                    // x → ±∞
+    const dir = point > 0 ? 1 : -1;
+    const [a, b, c] = [1e4, 1e6, 1e8].map(mag => f(dir * mag));
+    if ([a, b, c].every(isFinite) && Math.abs(c - b) < 1e-6 * Math.max(1, Math.abs(c)))
+      return numResult(c);
+    if ([a, b, c].every(isFinite) && Math.abs(c) > Math.abs(b) && Math.abs(b) > Math.abs(a) && Math.abs(c) > 1e6)
+      return { text: `The limit diverges to ${Math.sign(c) > 0 ? '+∞' : '−∞'}.`, cls: 'sym' };
+    return { text: 'Couldn’t determine that limit numerically — try simplifying the expression first.', cls: 'err' };
+  }
+
+  const direct = f(point);
+  if (isFinite(direct)) return numResult(direct);   // continuous at the point → limit = f(point)
+
+  // Indeterminate/undefined right at the point — approach from both sides.
+  const hs = [1e-2, 1e-4, 1e-6, 1e-8];
+  const L = hs.map(h => f(point - h));
+  const R = hs.map(h => f(point + h));
+  const lOK = L.every(isFinite), rOK = R.every(isFinite);
+  if (lOK && rOK) {
+    const lSettled = Math.abs(L[3] - L[2]) < 1e-4 * Math.max(1, Math.abs(L[3]));
+    const rSettled = Math.abs(R[3] - R[2]) < 1e-4 * Math.max(1, Math.abs(R[3]));
+    if (lSettled && rSettled) {
+      if (Math.abs(L[3] - R[3]) < 1e-4 * Math.max(1, Math.abs(L[3]), Math.abs(R[3])))
+        return numResult((L[3] + R[3]) / 2);
+      return { text: `The limit doesn’t exist — from the left it approaches ${fmtNum(L[3])}, but from the right it approaches ${fmtNum(R[3])}.`, cls: 'err' };
+    }
+  }
+  const growing = arr => arr.every(isFinite) && Math.abs(arr[3]) > Math.abs(arr[2]) && Math.abs(arr[2]) > Math.abs(arr[1]) && Math.abs(arr[3]) > 1e6;
+  if (growing(L) || growing(R) || !lOK || !rOK) {
+    const ls = Math.sign(L.slice().reverse().find(isFinite) || (L.every(v => !isFinite(v)) ? 0 : NaN));
+    const rs = Math.sign(R.slice().reverse().find(isFinite) || (R.every(v => !isFinite(v)) ? 0 : NaN));
+    if (ls && rs && ls === rs) return { text: `The limit diverges to ${ls > 0 ? '+∞' : '−∞'}.`, cls: 'sym' };
+    return { text: 'The limit doesn’t exist — the function blows up differently from each side.', cls: 'err' };
+  }
+  return { text: 'Couldn’t determine that limit numerically — try simplifying the expression first.', cls: 'err' };
 }
 
 /* Simpson's rule for definite integrals */
