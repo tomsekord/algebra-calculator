@@ -104,6 +104,16 @@
     .lnum { font-size:.72rem; color:var(--dim); font-family:'Consolas',monospace;
             min-width:22px; text-align:right; user-select:none; flex-shrink:0; }
 
+    .ldrag {
+      flex-shrink:0; width:14px; text-align:center; color:var(--dim); font-size:.95rem;
+      cursor:grab; user-select:none; line-height:1; opacity:.55; transition:opacity .12s;
+    }
+    .ldrag:hover { opacity:1; }
+    .ldrag:active { cursor:grabbing; }
+    .line.dragging { opacity:.4; }
+    .line.drag-over-top    { box-shadow:inset 0 2px 0 var(--accent); }
+    .line.drag-over-bottom { box-shadow:inset 0 -2px 0 var(--accent); }
+
     /* MathQuill field */
     .mq-field {
       flex:1; min-width:0; font-size:1.15rem; color:var(--text);
@@ -481,18 +491,55 @@ let knownVars = new Map();   // name -> {text} for the sidebar; separate from nu
                               // ambiguous (multi-valued) variables can't be substituted elsewhere
                               // but should still show up so the user can see "we found these values"
 let primaryDefLine = new Map();   // varName -> the one line that "owns" plain assignment to it
+let knownFunctionNames = new Set();   // single-letter names with a f(x)=... definition on some line —
+                                       // lets latexToExpr tell "f(x)" (call) apart from "f*(x)" (multiply)
 let activeMQ = null, activeLine = null;
 
 /* MathQuill mutates the config object it's given (rewrites .handlers into its
    own internal shape), so every field needs a fresh object — sharing one
    across fields silently breaks the handlers for every field but the first. */
+/* Typing "->" (e.g. inside a limit's "h->0") turns into a proper arrow \to,
+   since there's otherwise no way to type it by hand — only the Function
+   Palette's Limit button could produce one. Diffs the latex before/after
+   each edit to find a single freshly-typed ">" preceded by "-", then swaps
+   just those two characters for \to via backspace+write so it works no
+   matter where in the expression it happened (not just at the very end).
+   Two MathQuill quirks to work around here:
+   - handler callbacks get a freshly-wrapped `mq` object on every call, not
+     the stable per-field reference — so it can't be used as a WeakMap key
+     (every call would miss) or trusted to still work after this tick. Key
+     off the (stable) line element instead, and re-resolve the real field
+     reference (`line._mq`, set once at field creation) for later use.
+   - mutating the field synchronously from inside its own edit handler is
+     re-entrant — MathQuill's own keystroke processing silently reverts it
+     once the handler returns — so the actual fix has to happen next tick. */
+const lastLatexByLine = new WeakMap();
+function autoArrow(mq) {
+  const line = mq.el().closest('.line');
+  const stableMQ = (line && line._mq) || mq;
+  const key = line || mq;
+  const newLatex = stableMQ.latex();
+  const oldLatex = lastLatexByLine.get(key) || '';
+  lastLatexByLine.set(key, newLatex);
+  if (newLatex.length !== oldLatex.length + 1) return;
+  let p = 0;
+  while (p < oldLatex.length && oldLatex[p] === newLatex[p]) p++;
+  if (newLatex[p] !== '>' || p === 0 || newLatex[p - 1] !== '-') return;
+  if (oldLatex.slice(p) !== newLatex.slice(p + 1)) return;
+  setTimeout(() => {
+    stableMQ.keystroke('Backspace'); stableMQ.keystroke('Backspace'); stableMQ.write('\\to ');
+    lastLatexByLine.set(key, stableMQ.latex());
+    scheduleEval();
+  }, 0);
+}
+
 function makeMQConfig() {
   return {
     spaceBehavesLikeTab: true,
     autoCommands: 'pi tau theta alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma phi chi psi omega sqrt sum prod int infty',
     autoOperatorNames: 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh ln log exp abs sign floor ceil round gcd lcm mod det factor expand simplify factorial lim',
     handlers: {
-      edit: mq => { onFocusField(mq); scheduleEval(); },
+      edit: mq => { autoArrow(mq); onFocusField(mq); scheduleEval(); },
       enter: mq => enterFrom(mq),
       upOutOf: mq => moveVert(mq, -1),
       downOutOf: mq => moveVert(mq, +1),
@@ -507,10 +554,62 @@ function makeMQConfig() {
 document.addEventListener('DOMContentLoaded', () => {
   fixSqrtScaling();
   buildPalette();
+  setupDragReorder();
   for (let i = 0; i < 3; i++) addLine('', false);
   const f = document.querySelector('.mq-field');
   if (f && f.__mq) f.__mq.focus();
 });
+
+/* Drag a line's handle (⠿) to reorder — order matters for which line "owns"
+   a variable/function definition (see primaryDefLine), so reordering can
+   change results, not just cosmetics. Uses native HTML5 drag-and-drop,
+   delegated on the container since lines are created/removed dynamically. */
+function setupDragReorder() {
+  const container = document.getElementById('lines');
+  let dragSrc = null;
+
+  container.addEventListener('dragstart', e => {
+    const handle = e.target.closest('.ldrag');
+    const line = handle && handle.closest('.line');
+    if (!line) { e.preventDefault(); return; }
+    dragSrc = line;
+    line.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', '');
+  });
+
+  container.addEventListener('dragover', e => {
+    if (!dragSrc) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const target = e.target.closest('.line');
+    container.querySelectorAll('.drag-over-top,.drag-over-bottom').forEach(l => l.classList.remove('drag-over-top', 'drag-over-bottom'));
+    if (!target || target === dragSrc) return;
+    const before = (e.clientY - target.getBoundingClientRect().top) < target.offsetHeight / 2;
+    target.classList.add(before ? 'drag-over-top' : 'drag-over-bottom');
+  });
+
+  container.addEventListener('drop', e => {
+    if (!dragSrc) return;
+    e.preventDefault();
+    const target = e.target.closest('.line');
+    if (target && target !== dragSrc) {
+      const before = (e.clientY - target.getBoundingClientRect().top) < target.offsetHeight / 2;
+      container.insertBefore(dragSrc, before ? target : target.nextSibling);
+    }
+    finishDrag();
+  });
+
+  container.addEventListener('dragend', finishDrag);
+
+  function finishDrag() {
+    if (!dragSrc) return;
+    dragSrc.classList.remove('dragging');
+    container.querySelectorAll('.drag-over-top,.drag-over-bottom').forEach(l => l.classList.remove('drag-over-top', 'drag-over-bottom'));
+    dragSrc = null;
+    renumber(); evaluateAll(); updateStatus();
+  }
+}
 
 /* Fix MathQuill's broken scaleY on empty sqrt boxes */
 function fixSqrtScaling() {
@@ -539,6 +638,7 @@ function addLine(latex = '', focus = true) {
   const div = document.createElement('div');
   div.className = 'line';
   div.innerHTML = `
+    <span class="ldrag" draggable="true" title="Drag to reorder">⠿</span>
     <span class="lnum">?</span>
     <span class="mq-field"></span>
     <span class="larrow"></span>
@@ -736,6 +836,20 @@ function evaluateAll() {
   numScope = {}; varNames = new Set(); knownVars = new Map(); primaryDefLine = new Map();
 
   const linesArr = allLines();
+
+  // Find "f(x) = ..." definitions from the RAW latex (before latexToExpr, which
+  // itself needs to know these names to tell a function call apart from
+  // implicit multiplication — chicken-and-egg, so this scan can't go through
+  // the normal parser).
+  knownFunctionNames = new Set();
+  linesArr.forEach(line => {
+    const mq = line._mq;
+    const latex = mq ? mq.latex() : '';
+    const stripped = latex ? latex.replace(/\\left/g, '').replace(/\\right/g, '') : '';
+    const m = stripped.match(/^([a-zA-Z])\(([a-zA-Z])\)\s*=(?!=)/);
+    if (m) knownFunctionNames.add(m[1]);
+  });
+
   const systemResults = solveSystems(linesArr);
   // a=b+1, b=a+1 would otherwise make nerdamer's own variable table
   // self-referential and hang the whole page trying to resolve it — catch that
@@ -946,6 +1060,10 @@ function evalExpr(expr, line) {
   const trimmed = expr.trim();
   if (trimmed.endsWith('=') && !trimmed.endsWith('==')) return plainExpr(trimmed.slice(0, -1));
 
+  // Function definition:  f(x) = <formula>
+  const fdef = expr.match(/^([a-zA-Z])\(([a-zA-Z]\w*)\)\s*=(?!=)\s*(.+)$/);
+  if (fdef) return defineFunction(fdef[1], fdef[2], fdef[3]);
+
   // Assignment:  <name> = <value>
   const asgn = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
   if (asgn && !/[+\-*/^]/.test(asgn[1])) {
@@ -997,6 +1115,16 @@ function assign(name, rhs) {
     knownVars.set(name, { text: disp(str) });
     return { tex: safeTeX(s), text: disp(str), cls: 'sym' };
   } catch { throw new Error('Cannot evaluate'); }
+}
+
+function defineFunction(name, param, rhs) {
+  if (RESERVED_CONSTANTS.has(name))
+    return { text: `"${disp(name)}" is a reserved constant — pick a different function name.`, cls: 'err' };
+  try { math.evaluate(`${name}(${param}) = ${rhs}`, numScope); }
+  catch { return { text: `Couldn't make sense of that formula for ${disp(name)}(${disp(param)}).`, cls: 'err' }; }
+  try { nerdamer.setFunction(name, [param], rhs); } catch {}
+  knownVars.set(name, { text: `${disp(name)}(${disp(param)}) = ${disp(rhs)}` });
+  return { tex: `${disp(name)}(${disp(param)}) = ${safeTeXStr(rhs)}`, text: `${disp(name)}(${disp(param)}) = ${disp(rhs)}`, cls: 'sym' };
 }
 
 function solveEquation(expr) {
@@ -1378,7 +1506,7 @@ function symbolicCmd(name, inner) {
 function evalDerivative(latex) {
   const m = latex.match(/\\frac\{d\}\{d\s*([a-zA-Z]|\\[a-zA-Z]+)\}/);
   if (!m) throw new Error('Bad derivative');
-  const v = greekName(m[1]);
+  const v = aliasVar(greekName(m[1]), complexMode);
   const operandLatex = latex.slice(m.index + m[0].length);
   const operand = stripOuter(latexToExpr(operandLatex, complexMode));
   if (!operand) return { text: 'Type something after d/dx to take its derivative.', cls: 'err' };
@@ -1405,6 +1533,7 @@ function evalIntegral(latex) {
   const dm = rest.match(/(.*)d\s*([a-zA-Z])\s*$/s);
   let v = 'x', body = rest;
   if (dm) { body = dm[1]; v = dm[2]; }
+  v = aliasVar(v, complexMode);
   const operand = stripOuter(latexToExpr(body, complexMode)) || '1';
 
   if (lowerL != null && upperL != null) {           // definite → numeric
@@ -1421,7 +1550,7 @@ function evalSum(latex) {
   const HELP = 'To type a sum by hand: type the start value, press Tab (or →) to jump to the top limit, type the end value, press Tab (or →) again, then type what to add up. Or use the Σ button under "More functions" to build it for you.';
   const m = latex.match(/\\sum_\{([a-zA-Z])\s*=\s*([^}]*)\}\^\{([^}]*)\}/);
   if (!m || !m[3].trim()) return { text: HELP, cls: 'err' };   // empty top limit → Tab was never pressed
-  const v = m[1];
+  const v = aliasVar(m[1], complexMode);
   let lo, hi;
   try {
     lo = Math.round(math.evaluate(stripOuter(latexToExpr(m[2], complexMode)), numScope));
@@ -1440,7 +1569,7 @@ function evalLimit(latex) {
   const HELP = 'Type a limit like lim as x→0, then the expression to approach it with.';
   const m = latex.match(/\\lim_\{([a-zA-Z]|\\[a-zA-Z]+)\\to\s*(-)?(\\infty|[^}]*)\}/);
   if (!m) return { text: HELP, cls: 'err' };
-  const v = greekName(m[1]);
+  const v = aliasVar(greekName(m[1]), complexMode);
   const neg = !!m[2];
   const targetLatex = m[3];
   const rest = latex.slice(m.index + m[0].length);
@@ -1457,10 +1586,16 @@ function evalLimit(latex) {
     if (!isFinite(point)) return { text: HELP, cls: 'err' };
   }
 
+  // Track whether evaluation failed because of a genuinely undefined name
+  // (e.g. an undefined function like f in "lim h->0 (f(x+h)-f(x))/h") rather
+  // than the function actually blowing up — those deserve a very different
+  // message than "the limit doesn't exist".
+  let undefinedRef = null;
   const f = x => {
     try { const r = math.evaluate(body, { ...numScope, [v]: x }); return typeof r === 'number' ? r : NaN; }
-    catch { return NaN; }
+    catch (e) { if (/undefined/i.test(e.message || '')) undefinedRef = e.message; return NaN; }
   };
+  const undefinedMsg = () => ({ text: `Can't evaluate this limit numerically — ${undefinedRef}. Define any functions it uses (like "f(x) = ...") on another line first, or write out the actual formula.`, cls: 'err' });
   // Finite-difference estimates near a limit inherently carry floating-point
   // noise (e.g. 1.999999994 instead of 2) — snap results that are extremely
   // close to a whole number, since that noise is far smaller than any
@@ -1475,6 +1610,7 @@ function evalLimit(latex) {
       return numResult(c);
     if ([a, b, c].every(isFinite) && Math.abs(c) > Math.abs(b) && Math.abs(b) > Math.abs(a) && Math.abs(c) > 1e6)
       return { text: `The limit diverges to ${Math.sign(c) > 0 ? '+∞' : '−∞'}.`, cls: 'sym' };
+    if (undefinedRef) return undefinedMsg();
     return { text: 'Couldn’t determine that limit numerically — try simplifying the expression first.', cls: 'err' };
   }
 
@@ -1497,11 +1633,13 @@ function evalLimit(latex) {
   }
   const growing = arr => arr.every(isFinite) && Math.abs(arr[3]) > Math.abs(arr[2]) && Math.abs(arr[2]) > Math.abs(arr[1]) && Math.abs(arr[3]) > 1e6;
   if (growing(L) || growing(R) || !lOK || !rOK) {
+    if (undefinedRef) return undefinedMsg();
     const ls = Math.sign(L.slice().reverse().find(isFinite) || (L.every(v => !isFinite(v)) ? 0 : NaN));
     const rs = Math.sign(R.slice().reverse().find(isFinite) || (R.every(v => !isFinite(v)) ? 0 : NaN));
     if (ls && rs && ls === rs) return { text: `The limit diverges to ${ls > 0 ? '+∞' : '−∞'}.`, cls: 'sym' };
     return { text: 'The limit doesn’t exist — the function blows up differently from each side.', cls: 'err' };
   }
+  if (undefinedRef) return undefinedMsg();
   return { text: 'Couldn’t determine that limit numerically — try simplifying the expression first.', cls: 'err' };
 }
 
@@ -1683,7 +1821,17 @@ function latexToExpr(tex, complex) {
       if (stop && stop.indexOf(c) >= 0) break;
       if (c === '}' || c === ')') break;
       if (/[0-9.]/.test(c)) { let n = ''; while (i < s.length && /[0-9.]/.test(s[i])) n += s[i++]; V(n); continue; }
-      if (/[a-zA-Z]/.test(c)) { V(s[i++]); continue; }
+      if (/[a-zA-Z]/.test(c)) {
+        const name = s[i++];
+        // f(x) → a real function call, not "f * (x)", when f is a name the user
+        // has defined with "f(x) = ..." somewhere. Anything else keeps the old
+        // implicit-multiplication behavior (e.g. "x(y+1)" stays x*(y+1)).
+        if (s[i] === '(' && knownFunctionNames.has(name)) {
+          i++; const inner = parseSeq(')'); if (s[i] === ')') i++;
+          V(name + '(' + inner + ')');
+        } else V(name);
+        continue;
+      }
       if (c === '(') { i++; const inner = parseSeq(')'); if (s[i] === ')') i++; V('(' + inner + ')'); continue; }
       if (c === '{') { i++; const inner = parseSeq('}'); if (s[i] === '}') i++; V('(' + inner + ')'); continue; }
       if (c === '^') { i++; out += '^' + parseArg(); lastVal = true; continue; }
@@ -1729,6 +1877,18 @@ function findUnknowns(expr) {
 }
 
 function greekName(tok) { return tok.replace(/^\\/, ''); }
+
+/* A calculus notation's bound variable (d/dh, sum over n, lim as h->0, ...) is
+   read straight off the raw LaTeX, but the operand it's evaluated against has
+   already been through latexToExpr — which renames unit-colliding letters
+   (h, m, s, ...) and, in Real mode, i. Without this, "h" (the bound var) and
+   "hReservedVar" (what actually appears in the body) never match, throwing
+   "undefined symbol" for perfectly ordinary choices like h in a derivative
+   definition's limit. */
+function aliasVar(name, complex) {
+  if (!complex && name === 'i') return IVAR;
+  return UNIT_ALIASES[name] || name;
+}
 
 function stripOuter(str) {
   if (!str) return str;
