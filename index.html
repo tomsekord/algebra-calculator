@@ -2001,6 +2001,7 @@ function niceError(msg = '') {
   if (bad) return `I don't recognize "${bad[1]}" — check the spelling or pick it from the keyboard below.`;
   if (/unexpected|cannot read prop/i.test(m)) return 'That doesn’t look like valid math — check for typos or a missing symbol.';
   if (/cannot evaluate/i.test(m)) return 'I couldn’t work that out — check your expression.';
+  if (/maximum call stack/i.test(m)) return 'That function calls itself — make sure its formula doesn’t use its own name.';
   return 'Something’s not right here — check your typing.';
 }
 
