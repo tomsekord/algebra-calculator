@@ -1010,7 +1010,7 @@ function renderVarsPanel() {
 
   list.innerHTML = names.map(n => {
     const info = knownVars.get(n);
-    return `<div class="var-item"><span class="var-name">${disp(n)}</span><span class="var-val">${info.text}</span></div>`;
+    return `<div class="var-item"><span class="var-name">${info.label || disp(n)}</span><span class="var-val">${info.text}</span></div>`;
   }).join('');
 }
 
@@ -1146,7 +1146,7 @@ function defineFunction(name, param, rhs) {
   try { math.evaluate(`${name}(${param}) = ${rhs}`, numScope); }
   catch { return { text: `Couldn't make sense of that formula for ${disp(name)}(${disp(param)}).`, cls: 'err' }; }
   try { nerdamer.setFunction(name, [param], rhs); } catch {}
-  knownVars.set(name, { text: `${disp(name)}(${disp(param)}) = ${disp(rhs)}` });
+  knownVars.set(name, { text: disp(rhs), label: `${disp(name)}(${disp(param)})` });
   return { tex: `${disp(name)}(${disp(param)}) = ${safeTeXStr(rhs)}`, text: `${disp(name)}(${disp(param)}) = ${disp(rhs)}`, cls: 'sym' };
 }
 
