@@ -493,6 +493,7 @@ let knownVars = new Map();   // name -> {text} for the sidebar; separate from nu
 let primaryDefLine = new Map();   // varName -> the one line that "owns" plain assignment to it
 let knownFunctionNames = new Set();   // single-letter names with a f(x)=... definition on some line —
                                        // lets latexToExpr tell "f(x)" (call) apart from "f*(x)" (multiply)
+let primaryFuncDefLine = new Map();   // funcName -> the one line that "owns" its f(x)=... definition
 let activeMQ = null, activeLine = null;
 
 /* MathQuill mutates the config object it's given (rewrites .handlers into its
@@ -833,7 +834,7 @@ function setComplex(on) {
 
 function evaluateAll() {
   try { nerdamer.clearVars(); } catch {}
-  numScope = {}; varNames = new Set(); knownVars = new Map(); primaryDefLine = new Map();
+  numScope = {}; varNames = new Set(); knownVars = new Map(); primaryDefLine = new Map(); primaryFuncDefLine = new Map();
 
   const linesArr = allLines();
 
@@ -848,6 +849,17 @@ function evaluateAll() {
     const stripped = latex ? latex.replace(/\\left/g, '').replace(/\\right/g, '') : '';
     const m = stripped.match(/^([a-zA-Z])\(([a-zA-Z])\)\s*=(?!=)/);
     if (m) knownFunctionNames.add(m[1]);
+  });
+
+  // Same "first line owns it" rule as plain variables (below): a later
+  // "f(x) = 9" isn't a redefinition of f, it's an equation to solve for x
+  // using the already-known f — see evalExpr's fdef handling.
+  linesArr.forEach(line => {
+    const mq = line._mq;
+    const latex = mq ? mq.latex() : '';
+    const stripped = latex ? latex.replace(/\\left/g, '').replace(/\\right/g, '') : '';
+    const m = stripped.match(/^([a-zA-Z])\(([a-zA-Z])\)\s*=(?!=)/);
+    if (m && !primaryFuncDefLine.has(m[1])) primaryFuncDefLine.set(m[1], line);
   });
 
   const systemResults = solveSystems(linesArr);
@@ -1062,7 +1074,18 @@ function evalExpr(expr, line) {
 
   // Function definition:  f(x) = <formula>
   const fdef = expr.match(/^([a-zA-Z])\(([a-zA-Z]\w*)\)\s*=(?!=)\s*(.+)$/);
-  if (fdef) return defineFunction(fdef[1], fdef[2], fdef[3]);
+  if (fdef) {
+    // Same "first line owns it" rule as plain variable reassignment: a later
+    // "f(x) = 9" (from a different line than the one that defined f) is an
+    // equation to solve for x using the already-known f, not a redefinition.
+    const owner = primaryFuncDefLine.get(fdef[1]);
+    if (owner && owner !== line && Object.prototype.hasOwnProperty.call(numScope, fdef[1])) {
+      let substituted = null;
+      try { substituted = nerdamer(`${fdef[1]}(${fdef[2]})`).toString(); } catch {}
+      if (substituted) return solveEquation(`(${substituted})=(${fdef[3]})`);
+    }
+    return defineFunction(fdef[1], fdef[2], fdef[3]);
+  }
 
   // Assignment:  <name> = <value>
   const asgn = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
@@ -1845,9 +1868,14 @@ function latexToExpr(tex, complex) {
   }
 
   let expr = parseSeq(null);
-  if (!complex) expr = expr.replace(/\bi\b/g, IVAR);
+  // A letter immediately followed by "(" here is a real function call (only
+  // produced above for names in knownFunctionNames) — not a variable, so it
+  // shouldn't get renamed to dodge mathjs's unit collisions. Without the
+  // (?!\() guard, "g(x) = ..." (g collides with the gram unit) would rename
+  // its own function name mid-definition and break parsing of that very line.
+  if (!complex) expr = expr.replace(/\bi\b(?!\()/g, IVAR);
   for (const [letter, alias] of Object.entries(UNIT_ALIASES)) {
-    expr = expr.replace(new RegExp(`\\b${letter}\\b`, 'g'), alias);
+    expr = expr.replace(new RegExp(`\\b${letter}\\b(?!\\()`, 'g'), alias);
   }
   return expr;
 }
