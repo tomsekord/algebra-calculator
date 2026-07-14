@@ -1708,9 +1708,13 @@ function tryAbsImpossible(lhs, rhs) {
 }
 
 /* sin(y)=1, cos(y)=0.5, tan(y)=2, etc. — give the one principal answer
-   instead of Newton's method finding a pile of periodic repeats. */
+   instead of Newton's method finding a pile of periodic repeats. In Complex
+   mode, sin/cos targets outside [-1,1] (e.g. sin(x)=2) have no real answer
+   but do have a complex one — math.asin/acos already return a Complex value
+   for exactly this case, so use those instead of bailing out to the
+   real-only numeric Newton's-method fallback (which would then wrongly
+   report "no real number" even though we're in Complex mode). */
 function trySimpleTrigInverse(lhs, rhs, v) {
-  if (complexMode) return null;   // real inverse trig only for now
   const L = stripOuter(lhs), R = stripOuter(rhs);
   let m = L.match(/^(sin|cos|tan)\((.+)\)$/);
   let constSide = R;
@@ -1723,10 +1727,13 @@ function trySimpleTrigInverse(lhs, rhs, v) {
   if (typeof c !== 'number' || !isFinite(c)) return null;
 
   const fn = m[1];
-  if ((fn === 'sin' || fn === 'cos') && Math.abs(c) > 1)
-    return { text: `No real number solves this — ${fn} only ever gives values between −1 and 1.`, cls: null };
+  const outOfRealRange = (fn === 'sin' || fn === 'cos') && Math.abs(c) > 1;
+  if (outOfRealRange && !complexMode)
+    return { text: `No real number solves this — ${fn} only ever gives values between −1 and 1. Try ℂ Complex mode to see a complex answer.`, cls: null };
 
-  const val = fn === 'sin' ? Math.asin(c) : fn === 'cos' ? Math.acos(c) : Math.atan(c);
+  const val = outOfRealRange
+    ? (fn === 'sin' ? math.asin(c) : math.acos(c))       // math.js promotes to Complex here
+    : (fn === 'sin' ? Math.asin(c) : fn === 'cos' ? Math.acos(c) : Math.atan(c));
   registerKnownValue(v, String(val));
   return { text: null };
 }
@@ -1734,7 +1741,16 @@ function trySimpleTrigInverse(lhs, rhs, v) {
 function numericSolve(lhs, rhs, v) {
   const f = x => { try { return math.evaluate(lhs, { ...numScope, [v]: x }) - math.evaluate(rhs, { ...numScope, [v]: x }); } catch { return NaN; } };
   const found = findRealRoots(f);
-  if (!found.length) return { text: 'Couldn’t find a real number that solves this.', cls: null };
+  // This numeric fallback only ever searches for REAL roots (Newton's method
+  // on plain JS numbers) — it has no way to find a complex one. Saying
+  // "couldn't find a real number" implies a complex answer might still be
+  // out there, which is misleading: in Complex mode it's not even true (we
+  // never looked for one), and even in Real mode it overpromises when there
+  // may be no solution in either number system.
+  if (!found.length) return { text: complexMode
+    ? 'Couldn’t find a number that solves this, even searching numerically — it may have no solution.'
+    : 'Couldn’t find a real number that solves this numerically. Try ℂ Complex mode — though it may not have a solution there either.',
+    cls: null };
   if (found.length === 1) { registerKnownValue(v, String(found[0])); return { text: null }; }
   const dv = disp(v);
   const shown = found.slice(0, 6).sort((a, b) => a - b);
