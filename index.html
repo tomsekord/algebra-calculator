@@ -1186,8 +1186,13 @@ function defineFunction(name, param, rhs) {
   try { math.evaluate(`${name}(${param}) = ${rhs}`, numScope); }
   catch { return { text: `Couldn't make sense of that formula for ${disp(name)}(${disp(param)}).`, cls: 'err' }; }
   try { nerdamer.setFunction(name, [param], rhs); } catch {}
-  knownVars.set(name, { text: disp(rhs), tex: safeTeXStr(rhs), label: `${disp(name)}(${disp(param)})` });
-  return { tex: `${disp(name)}(${disp(param)}) = ${safeTeXStr(rhs)}`, text: `${disp(name)}(${disp(param)}) = ${disp(rhs)}`, cls: 'sym' };
+  // Decimal mode should apply to a function's formula too, e.g.
+  // "f(x) = sqrt(3)*x" -> "f(x) = 1.732050808*x" — same fold-the-constants
+  // helper plainExpr uses for the same reason.
+  let rhsText = disp(rhs), rhsTex = safeTeXStr(rhs);
+  if (decimalMode) { const dec = tryDecimalCoeffForm(rhs); if (dec) { rhsText = dec.text; rhsTex = dec.tex; } }
+  knownVars.set(name, { text: rhsText, tex: rhsTex, label: `${disp(name)}(${disp(param)})` });
+  return { tex: `${disp(name)}(${disp(param)}) = ${rhsTex}`, text: `${disp(name)}(${disp(param)}) = ${rhsText}`, cls: 'sym' };
 }
 
 function solveEquation(expr) {
@@ -1599,7 +1604,7 @@ function tryDecimalCoeffForm(expr) {
     let text = disp(evalObj.toString())
       .replace(/(-?\d+)\/(\d+)/g, (m, n, d) => toDecimalLiteral(n, d) ?? m)
       .replace(/\((-?[\d.]+)\)/g, '$1');   // drop redundant parens left around a bare decimal
-    if (/^-?\d+(\.\d+)?$/.test(text)) return null;   // pure number — the branch above already handles that
+    const isPureNumber = /^-?\d+(\.\d+)?$/.test(text);
     let tex;
     // nerdamer's toTeX() puts the whole numerator — coefficient AND variable
     // part, e.g. "315761972 \cdot x" — inside the \frac{}, so the digit-only
@@ -1612,7 +1617,7 @@ function tryDecimalCoeffForm(expr) {
         return dec == null ? m : (rest ? dec + rest : dec);
       });
     } catch { tex = text.replace(/\*/g, ' \\cdot '); }
-    return { tex, text, cls: 'sym' };
+    return { tex, text, cls: isPureNumber ? 'num' : 'sym' };
   } catch { nerdExact(); return null; }
 }
 
