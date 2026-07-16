@@ -1597,6 +1597,35 @@ function toDecimalLiteral(n, d) {
   const val = Number(n) / Number(d);
   return isFinite(val) ? parseFloat(val.toPrecision(10)).toString() : null;
 }
+/* Walk \frac{numerator}{denominator} pairs in a TeX string with proper brace
+   depth tracking (a regex like [^}]* breaks the moment the numerator has its
+   own nested braces, e.g. "315761972 \cdot x^{2}" — the exponent's "}" ends
+   the match early and desyncs the rest of the parse). Converts only the
+   pairs whose numerator starts with a digit run and whose denominator is
+   pure digits, leaving everything else (including any surrounding variable
+   part inside the numerator) untouched. */
+function fracsToDecimalTeX(tex) {
+  let out = '', i = 0;
+  const MARK = '\\frac{';
+  while (i < tex.length) {
+    const idx = tex.indexOf(MARK, i);
+    if (idx === -1) { out += tex.slice(i); break; }
+    out += tex.slice(i, idx);
+    const readBraced = start => {   // start points just past an opening '{'
+      let depth = 1, p = start;
+      while (p < tex.length && depth > 0) { if (tex[p] === '{') depth++; else if (tex[p] === '}') depth--; if (depth > 0) p++; }
+      return { content: tex.slice(start, p), end: p + 1 };   // end is just past the matching '}'
+    };
+    const num = readBraced(idx + MARK.length);
+    if (tex[num.end] !== '{') { out += tex.slice(idx, num.end); i = num.end; continue; }
+    const den = readBraced(num.end + 1);
+    const numMatch = num.content.match(/^(-?\d+)([\s\S]*)$/);
+    const dec = numMatch && /^\d+$/.test(den.content) ? toDecimalLiteral(numMatch[1], den.content) : null;
+    out += dec == null ? tex.slice(idx, den.end) : dec + numMatch[2];
+    i = den.end;
+  }
+  return out;
+}
 function tryDecimalCoeffForm(expr) {
   try {
     const evalObj = nerdamer(expr).evaluate();
@@ -1606,17 +1635,8 @@ function tryDecimalCoeffForm(expr) {
       .replace(/\((-?[\d.]+)\)/g, '$1');   // drop redundant parens left around a bare decimal
     const isPureNumber = /^-?\d+(\.\d+)?$/.test(text);
     let tex;
-    // nerdamer's toTeX() puts the whole numerator — coefficient AND variable
-    // part, e.g. "315761972 \cdot x" — inside the \frac{}, so the digit-only
-    // pattern above isn't enough; match a leading digit run optionally
-    // followed by the rest of the numerator and splice the decimal back in
-    // front of it, dropping the now-pointless \frac{}{} wrapper.
-    try {
-      tex = disp(evalObj.toTeX()).replace(/\\frac\{(-?\d+)(\s*\\cdot\s*[^}]*)?\}\{(\d+)\}/g, (m, n, rest, d) => {
-        const dec = toDecimalLiteral(n, d);
-        return dec == null ? m : (rest ? dec + rest : dec);
-      });
-    } catch { tex = text.replace(/\*/g, ' \\cdot '); }
+    try { tex = fracsToDecimalTeX(disp(evalObj.toTeX())); }
+    catch { tex = text.replace(/\*/g, ' \\cdot '); }
     return { tex, text, cls: isPureNumber ? 'num' : 'sym' };
   } catch { nerdExact(); return null; }
 }
@@ -1702,6 +1722,7 @@ function evalDerivative(latex) {
   if (!operand) return { text: 'Type something after d/dx to take its derivative.', cls: 'err' };
   const d = nerdamer.diff(operand, v);
   const s = nerdamer(d.toString()).simplify();
+  if (decimalMode) { const dec = tryDecimalCoeffForm(s.toString()); if (dec) return dec; }
   return { tex: safeTeX(s), text: disp(s.toString()), cls: 'sym' };
 }
 
@@ -1733,6 +1754,10 @@ function evalIntegral(latex) {
     return { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
   }
   const I = nerdamer.integrate(operand, v);          // indefinite → symbolic
+  if (decimalMode) {
+    const dec = tryDecimalCoeffForm(I.toString());
+    if (dec) return { tex: dec.tex + ' + C', text: dec.text + ' + C', cls: dec.cls };
+  }
   return { tex: safeTeX(I) + ' + C', text: disp(I.toString()) + ' + C', cls: 'sym' };
 }
 
