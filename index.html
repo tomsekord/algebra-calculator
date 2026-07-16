@@ -1707,7 +1707,17 @@ function symbolicCmd(name, inner) {
   if (name === 'factor')   out = nerdamer.factor(inner);
   if (name === 'expand')   out = nerdamer.expand(inner);
   if (name === 'simplify') out = nerdamer(inner).simplify();
-  return { tex: safeTeX(out), text: disp(out.toString()), cls: 'sym' };
+  const str = out.toString();
+  // nerdamer's expand/simplify can rationalize an irrational coefficient
+  // into a giant ugly fraction (same quirk worked around in rootFromExpr) —
+  // a clean decimal is strictly more readable than that, so fall back to one
+  // whenever this happens, even in Exact mode where we'd otherwise leave the
+  // symbolic form alone.
+  if (decimalMode || /\d{6,}/.test(str)) {
+    const dec = tryDecimalCoeffForm(str);
+    if (dec) return dec;
+  }
+  return { tex: safeTeX(out), text: disp(str), cls: 'sym' };
 }
 
 /* ============================================================
