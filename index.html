@@ -976,31 +976,35 @@ function registerKnownValue(name, valueExprStr) {
       numScope[name] = val;
       try { nerdamer.setVar(name, String(val)); } catch {}
       varNames.add(name);
-      knownVars.set(name, { text: fmtNum(val) });
+      knownVars.set(name, { text: fmtNum(val), tex: fmtNumTeX(val) });
       return;
     }
     if (val && val.isComplex) {
       numScope[name] = val;
       try { nerdamer.setVar(name, valueExprStr); } catch {}
       varNames.add(name);
-      knownVars.set(name, { text: fmtMath(val) });
+      knownVars.set(name, { text: fmtMath(val), tex: complexTeX(val) });
       return;
     }
   } catch {}
   try {
     nerdamer.setVar(name, valueExprStr);
     varNames.add(name);
-    knownVars.set(name, { text: disp(valueExprStr) });
+    knownVars.set(name, { text: disp(valueExprStr), tex: safeTeXStr(valueExprStr) });
   } catch {}
 }
 
 /* A variable with several candidate values (ambiguous equation/system) can't be
-   substituted into other lines, but should still show up in the sidebar. */
-function registerMultiValue(name, texts) {
-  knownVars.set(name, { text: texts.join('  or  ') });
+   substituted into other lines, but should still show up in the sidebar.
+   `items` is an array of {text, tex} pairs, same shape as a single entry. */
+function registerMultiValue(name, items) {
+  knownVars.set(name, { multi: items });
 }
 
-/* Render the "Variables" sidebar from whatever's been solved/assigned so far */
+/* Render the "Variables" sidebar from whatever's been solved/assigned so far.
+   Values are rendered through KaTeX (falling back to plain text if a value
+   has no `tex` or KaTeX can't parse it) so they look like normal math
+   symbols instead of raw notation like "sqrt(3)" or "x^2". */
 function renderVarsPanel() {
   const list = document.getElementById('varsList');
   if (!list) return;
@@ -1008,10 +1012,34 @@ function renderVarsPanel() {
 
   if (!names.length) { list.innerHTML = '<div class="vars-empty">No variables yet</div>'; return; }
 
-  list.innerHTML = names.map(n => {
+  list.innerHTML = '';
+  names.forEach(n => {
     const info = knownVars.get(n);
-    return `<div class="var-item"><span class="var-name">${info.label || disp(n)}</span><span class="var-val">${info.text}</span></div>`;
-  }).join('');
+    const row = document.createElement('div');
+    row.className = 'var-item';
+    const nameEl = document.createElement('span');
+    nameEl.className = 'var-name';
+    nameEl.textContent = info.label || disp(n);
+    const valEl = document.createElement('span');
+    valEl.className = 'var-val';
+    const items = info.multi || [info];
+    items.forEach((item, i) => {
+      if (i > 0) valEl.appendChild(document.createTextNode('  or  '));
+      valEl.appendChild(katexOrTextSpan(item));
+    });
+    row.append(nameEl, valEl);
+    list.appendChild(row);
+  });
+}
+
+function katexOrTextSpan(item) {
+  const span = document.createElement('span');
+  if (item.tex) {
+    try { span.innerHTML = katex.renderToString(item.tex, { throwOnError: false }); return span; }
+    catch {}
+  }
+  span.textContent = item.text;
+  return span;
 }
 
 function renderResult(el, out) {
@@ -1117,14 +1145,14 @@ function assign(name, rhs) {
     if (typeof val === 'number' && isFinite(val)) {
       numScope[name] = val; varNames.add(name);
       try { nerdamer.setVar(name, String(val)); } catch {}
-      knownVars.set(name, { text: fmtNum(val) });
+      knownVars.set(name, { text: fmtNum(val), tex: fmtNumTeX(val) });
       return { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
     }
     if (val && val.isComplex) {
       if (!complexMode && Math.abs(val.im) > 1e-12)
         return { text: 'This needs an imaginary number — turn on ℂ Complex mode (top right) to see it.', cls: 'err' };
       numScope[name] = val; varNames.add(name);
-      knownVars.set(name, { text: fmtMath(val) });
+      knownVars.set(name, { text: fmtMath(val), tex: complexTeX(val) });
       return { text: fmtMath(val), cls: null };
     }
     numScope[name] = val; varNames.add(name);
@@ -1135,7 +1163,7 @@ function assign(name, rhs) {
     const s = nerdamer(rhs); const str = s.toString();
     try { nerdamer.setVar(name, str); } catch {}
     varNames.add(name);
-    knownVars.set(name, { text: disp(str) });
+    knownVars.set(name, { text: disp(str), tex: safeTeX(s) });
     return { tex: safeTeX(s), text: disp(str), cls: 'sym' };
   } catch { throw new Error('Cannot evaluate'); }
 }
@@ -1146,7 +1174,7 @@ function defineFunction(name, param, rhs) {
   try { math.evaluate(`${name}(${param}) = ${rhs}`, numScope); }
   catch { return { text: `Couldn't make sense of that formula for ${disp(name)}(${disp(param)}).`, cls: 'err' }; }
   try { nerdamer.setFunction(name, [param], rhs); } catch {}
-  knownVars.set(name, { text: disp(rhs), label: `${disp(name)}(${disp(param)})` });
+  knownVars.set(name, { text: disp(rhs), tex: safeTeXStr(rhs), label: `${disp(name)}(${disp(param)})` });
   return { tex: `${disp(name)}(${disp(param)}) = ${safeTeXStr(rhs)}`, text: `${disp(name)}(${disp(param)}) = ${disp(rhs)}`, cls: 'sym' };
 }
 
@@ -1168,6 +1196,18 @@ function solveEquation(expr) {
     return { text: `This has more than one unknown (${unknowns.map(disp).join(', ')}). Add another equation using the same variable(s) on another line and I’ll try to solve them together.`, cls: 'err' };
 
   const v = unknowns[0], dv = disp(v);
+
+  // A malformed side (e.g. "x^2 = 3-", a dangling operator) can't be evaluated
+  // at ANY x, so every downstream solver — numeric search included — just
+  // sees "NaN everywhere" and reports "no solution found", which reads like
+  // the equation was fine but unsolvable rather than the truth: it's not
+  // valid math. Catch that up front with one substitution-based test eval.
+  try { math.evaluate(lhs, { ...numScope, [v]: 1 }); math.evaluate(rhs, { ...numScope, [v]: 1 }); }
+  catch (e) {
+    if (/unexpected|syntax/i.test(e.message || ''))
+      return { text: 'That doesn’t look like valid math — check for a missing number or a trailing +, -, *, or /.', cls: 'err' };
+  }
+
   const poly = `(${lhs})-(${rhs})`;
 
   const coeffs = polyCoeffs(poly, v);
@@ -1192,7 +1232,7 @@ function solveEquation(expr) {
   if (!complexMode) parts = parts.filter(p => p.real);
   if (!parts.length) return { text: complexMode ? 'This equation has no solution.' : 'No real number solves this — try ℂ Complex mode to see a complex answer.', cls: null };
   if (parts.length === 1) { registerKnownValue(v, parts[0].text); return { text: null }; }
-  registerMultiValue(v, parts.map(p => p.text));
+  registerMultiValue(v, parts.map(p => ({ text: p.text, tex: p.tex })));
   return formatSolutions(parts, dv);
 }
 
@@ -1280,7 +1320,7 @@ function solveSystems(linesArr) {
       out = { text: null };
     } else {
       if (tuples.length > 1) {
-        for (const v of allVars) registerMultiValue(v, tuples.map(t => t.find(p => p.v === v).text));
+        for (const v of allVars) registerMultiValue(v, tuples.map(t => { const p = t.find(p => p.v === v); return { text: p.text, tex: p.tex }; }));
       }
       out = formatSystemDisplay(tuples);
     }
@@ -1767,7 +1807,7 @@ function numericSolve(lhs, rhs, v) {
   if (found.length === 1) { registerKnownValue(v, String(found[0])); return { text: null }; }
   const dv = disp(v);
   const shown = found.slice(0, 6).sort((a, b) => a - b);
-  registerMultiValue(v, shown.map(s => `≈ ${fmtNum(s)}`));
+  registerMultiValue(v, shown.map(s => ({ text: `≈ ${fmtNum(s)}`, tex: `\\approx ${fmtNumTeX(s)}` })));
   const parts = shown.map(s => `${dv} \\approx ${fmtNum(s)}`);
   if (found.length > 6) parts.push('\\dots');
   return {
