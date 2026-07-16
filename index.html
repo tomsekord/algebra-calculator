@@ -1431,6 +1431,19 @@ function rootFromExpr(expr) {
   // reusing the earlier nerdamer(expr) reference would read back corrupted state
   // (e.g. sqrt(4e300)/2 simplifying in-place down to a bare "1").
   if (/\d{6,}/.test(s)) { try { s = nerdamer(expr).toString(); } catch {} }
+  // Worse than an ugly fraction: simplify() can silently return an outright
+  // WRONG value for some complex expressions — e.g. "(-1+sqrt(-3))/2" (a
+  // genuine complex root, ≈ -0.5+0.866i) collapses to the bare string "0".
+  // That has no long digit run to trip the check above, so verify the
+  // simplified form still numerically matches the original before trusting it.
+  try {
+    const orig = math.evaluate(expr, numScope);
+    const simp = math.evaluate(disp(s), numScope);
+    const re = v => (v && v.isComplex ? v.re : v), im = v => (v && v.isComplex ? v.im : 0);
+    if (Math.abs(re(orig) - re(simp)) > 1e-6 || Math.abs(im(orig) - im(simp)) > 1e-6) {
+      s = nerdamer(expr).toString();
+    }
+  } catch {}
   return { text: disp(s), tex: safeTeXStr(s), real: !/\bi\b/.test(s) };
 }
 
