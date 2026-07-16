@@ -1553,19 +1553,27 @@ function preferRealOddRoot(expr) {
   return out;
 }
 
+function isCleanNumber(x) { return /^-?\d+(\/\d+)?$/.test(fmtNum(x)); }
+
 /* In Exact mode, a plain expression like "sqrt(3)" or "e" should stay
    symbolic instead of showing mathjs's decimal — but mathjs always
    evaluates successfully first (no exception to fall back from), so
    plainExpr has to explicitly ask nerdamer for a cleaner form and
-   double-check it actually means the same number before trusting it. */
+   double-check it actually means the same number before trusting it.
+   `val` may be a plain number or a mathjs Complex (e.g. sqrt(-3) in
+   Complex mode) — same logic either way, just comparing both parts. */
 function tryExactForm(expr, val) {
-  if (/^-?\d+(\/\d+)?$/.test(fmtNum(val))) return null;   // already a plain integer/fraction
+  const valRe = val && val.isComplex ? val.re : val;
+  const valIm = val && val.isComplex ? val.im : 0;
+  if (isCleanNumber(valRe) && (valIm === 0 || isCleanNumber(valIm))) return null;   // already clean
   try {
     const s = nerdamer(expr); const str = s.toString();
     const dstr = disp(str);
     if (/^-?\d+(\.\d+)?$/.test(dstr)) return null;         // nerdamer also just gives a plain number
     const check = math.evaluate(dstr, numScope);
-    if (typeof check !== 'number' || !isFinite(check) || Math.abs(check - val) > 1e-6) return null;
+    const checkRe = check && check.isComplex ? check.re : (typeof check === 'number' ? check : NaN);
+    const checkIm = check && check.isComplex ? check.im : 0;
+    if (!isFinite(checkRe) || Math.abs(checkRe - valRe) > 1e-6 || Math.abs(checkIm - valIm) > 1e-6) return null;
     return { tex: safeTeX(s), text: dstr, cls: 'sym' };
   } catch { return null; }
 }
@@ -1626,6 +1634,10 @@ function plainExpr(expr) {
       if (val && val.isComplex) {
         if (!complexMode && Math.abs(val.im) > 1e-12)
           return { text: 'This needs an imaginary number — turn on ℂ Complex mode (top right) to see it.', cls: 'err' };
+        if (!decimalMode) {
+          const exact = tryExactForm(expr, val);
+          if (exact) return exact;
+        }
         return { tex: complexTeX(val), text: fmtMath(val), cls: 'num' };
       }
       if (typeof val === 'number' && !isFinite(val)) {
