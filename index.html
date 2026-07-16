@@ -313,6 +313,10 @@
       <button id="modeReal" class="active" onclick="setComplex(false)">ℝ Real</button>
       <button id="modeComplex" onclick="setComplex(true)">ℂ Complex</button>
     </div>
+    <div class="mode-toggle" title="Exact: answers like √3 stay symbolic. Decimal: shown as 1.732050808 instead.">
+      <button id="modeExact" class="active" onclick="setDecimal(false)">√ Exact</button>
+      <button id="modeDecimal" onclick="setDecimal(true)">1.7 Decimal</button>
+    </div>
     <button class="btn" onclick="clearAll()">Clear</button>
   </div>
 </header>
@@ -486,6 +490,7 @@ for (const letter of ['b','g','h','l','m','s','t','A','B','C','E','F','H','J','K
   UNIT_ALIASES[letter] = letter + 'ReservedVar';
 }
 let complexMode = false;
+let decimalMode = false;   // Exact (√3) vs Decimal (1.732050808) display for exact-form roots
 let numScope = {}, varNames = new Set();
 let knownVars = new Map();   // name -> {text} for the sidebar; separate from numScope since
                               // ambiguous (multi-valued) variables can't be substituted elsewhere
@@ -829,6 +834,13 @@ function setComplex(on) {
   document.getElementById('modeReal').classList.toggle('active', !on);
   document.getElementById('modeComplex').classList.toggle('active', on);
   document.getElementById('modeLabel').textContent = on ? 'Complex' : 'Real';
+  evaluateAll();
+}
+
+function setDecimal(on) {
+  decimalMode = on;
+  document.getElementById('modeExact').classList.toggle('active', !on);
+  document.getElementById('modeDecimal').classList.toggle('active', on);
   evaluateAll();
 }
 
@@ -1461,6 +1473,19 @@ function dedupe(parts) {
   return out;
 }
 
+/* Format a math.js value (number or Complex) as a {text, tex, real} root
+   display, snapping near-zero noise to exactly 0. Returns null if `val`
+   isn't a usable finite number/complex (e.g. still has a free variable). */
+function numericRootDisplay(val) {
+  let re = val && val.isComplex ? val.re : (typeof val === 'number' ? val : NaN);
+  let im = val && val.isComplex ? val.im : 0;
+  if (!isFinite(re)) return null;
+  if (Math.abs(re) < 1e-9) re = 0;
+  if (Math.abs(im) < 1e-9) im = 0;
+  if (im === 0) return { text: fmtNum(re), tex: fmtNumTeX(re), real: true };
+  return { text: fmtMath({ isComplex: true, re, im }), tex: complexTeX({ re, im }), real: false };
+}
+
 /* Simplify an exact root expression via nerdamer → {text, tex, real} */
 function rootFromExpr(expr) {
   let s;
@@ -1483,6 +1508,8 @@ function rootFromExpr(expr) {
     if (Math.abs(re(orig) - re(simp)) > 1e-6 || Math.abs(im(orig) - im(simp)) > 1e-6) {
       s = nerdamer(expr).toString();
     }
+    // "Decimal" display mode: show 1.732050808 instead of sqrt(3).
+    if (decimalMode) { const num = numericRootDisplay(orig); if (num) return num; }
   } catch {}
   return { text: disp(s), tex: safeTeXStr(s), real: !/\bi\b/.test(s) };
 }
@@ -1492,14 +1519,14 @@ function cleanSolution(part) {
   const d = disp(part);
   if (/\d{6,}/.test(part)) {                  // rationalised approximation → round it
     try {
-      const val = math.evaluate(d, numScope);
-      let re = val && val.isComplex ? val.re : (typeof val === 'number' ? val : NaN);
-      let im = val && val.isComplex ? val.im : 0;
-      if (!isFinite(re)) throw 0;
-      if (Math.abs(re) < 1e-9) re = 0;
-      if (Math.abs(im) < 1e-9) im = 0;
-      if (im === 0) return { text: fmtNum(re), tex: fmtNumTeX(re), real: true };
-      return { text: fmtMath({ isComplex: true, re, im }), tex: complexTeX({ re, im }), real: false };
+      const num = numericRootDisplay(math.evaluate(d, numScope));
+      if (num) return num;
+    } catch {}
+  }
+  if (decimalMode) {
+    try {
+      const num = numericRootDisplay(math.evaluate(d, numScope));
+      if (num) return num;
     } catch {}
   }
   return { text: d, tex: safeTeXStr(part), real: !/\bi\b/.test(d) };
