@@ -1570,6 +1570,44 @@ function tryExactForm(expr, val) {
   } catch { return null; }
 }
 
+/* Decimal-mode counterpart for expressions that still have a free variable
+   (e.g. "e*sqrt(3)*x"): nerdamer's .evaluate() does turn the numeric part
+   into a number while leaving the variable alone, but — same rationalizing
+   quirk as elsewhere in this file — it comes back as an ugly fraction like
+   "(315761972/67066357)*x" instead of "4.708202236*x". Fix up every
+   pure-digit fraction in both the string and TeX forms nerdamer already
+   generated, rather than the whole expression (the variable part must stay
+   untouched) — and critically, without ever re-parsing the fixed-up text
+   back through nerdamer, which would just rationalize the decimal right
+   back into an ugly fraction again. */
+function toDecimalLiteral(n, d) {
+  const val = Number(n) / Number(d);
+  return isFinite(val) ? parseFloat(val.toPrecision(10)).toString() : null;
+}
+function tryDecimalCoeffForm(expr) {
+  try {
+    const evalObj = nerdamer(expr).evaluate();
+    nerdExact();
+    let text = disp(evalObj.toString())
+      .replace(/(-?\d+)\/(\d+)/g, (m, n, d) => toDecimalLiteral(n, d) ?? m)
+      .replace(/\((-?[\d.]+)\)/g, '$1');   // drop redundant parens left around a bare decimal
+    if (/^-?\d+(\.\d+)?$/.test(text)) return null;   // pure number — the branch above already handles that
+    let tex;
+    // nerdamer's toTeX() puts the whole numerator — coefficient AND variable
+    // part, e.g. "315761972 \cdot x" — inside the \frac{}, so the digit-only
+    // pattern above isn't enough; match a leading digit run optionally
+    // followed by the rest of the numerator and splice the decimal back in
+    // front of it, dropping the now-pointless \frac{}{} wrapper.
+    try {
+      tex = disp(evalObj.toTeX()).replace(/\\frac\{(-?\d+)(\s*\\cdot\s*[^}]*)?\}\{(\d+)\}/g, (m, n, rest, d) => {
+        const dec = toDecimalLiteral(n, d);
+        return dec == null ? m : (rest ? dec + rest : dec);
+      });
+    } catch { tex = text.replace(/\*/g, ' \\cdot '); }
+    return { tex, text, cls: 'sym' };
+  } catch { nerdExact(); return null; }
+}
+
 function plainExpr(expr) {
   let mErr;
   try {
@@ -1609,7 +1647,14 @@ function plainExpr(expr) {
     if (/^[a-zA-Z]\w*$/.test(dstr)) return { text: null };
     // The variables cancelled out and left a plain number (e.g. x^0, x/x) → color it like a number
     if (/^-?\d+(\.\d+)?$/.test(dstr)) return { tex: dstr, text: dstr, cls: 'num' };
-    if (str) return { tex: safeTeX(s), text: dstr, cls: 'sym' };
+    if (str) {
+      // In Decimal mode, an expression that still has a free variable (so it
+      // never reached the plain-number branch above) should still turn its
+      // numeric part into a decimal — e.g. "e*sqrt(3)*x" → "4.708202236x",
+      // not stay as "e*sqrt(3)*x" just because x has no value.
+      if (decimalMode) { const dec = tryDecimalCoeffForm(expr); if (dec) return dec; }
+      return { tex: safeTeX(s), text: dstr, cls: 'sym' };
+    }
   } catch {}
   // Undefined variable(s) with nothing to simplify → stay quiet rather than error
   if (mErr && /undefined symbol/i.test(mErr.message)) return { text: null };
