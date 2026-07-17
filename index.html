@@ -337,7 +337,7 @@
     <div class="status">
       <span>Lines: <b id="lineCount">0</b></span>
       <span>Mode: <b id="modeLabel">Real</b></span>
-      <span><b>Enter</b> new line · <b>↑↓</b> navigate · type <b>/</b> for fraction, <b>^</b> for power, <b>sqrt</b> for √</span>
+      <span><b>Enter</b> new line · <b>↑↓</b> navigate · type <b>/</b> for fraction, <b>^</b> for power, <b>sqrt</b> for √ · <b>Ctrl+Z</b> undo, <b>Ctrl+Y</b> redo</span>
     </div>
   </div>
 
@@ -545,7 +545,7 @@ function makeMQConfig() {
     autoCommands: 'pi tau theta alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma phi chi psi omega sqrt sum prod int infty',
     autoOperatorNames: 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh ln log exp abs sign floor ceil round gcd lcm mod det factor expand simplify factorial lim',
     handlers: {
-      edit: mq => { autoArrow(mq); onFocusField(mq); scheduleEval(); },
+      edit: mq => { autoArrow(mq); onFocusField(mq); recordHistory(); scheduleEval(); },
       enter: mq => enterFrom(mq),
       upOutOf: mq => moveVert(mq, -1),
       downOutOf: mq => moveVert(mq, +1),
@@ -555,6 +555,76 @@ function makeMQConfig() {
 }
 
 /* ============================================================
+   Undo / Redo (Ctrl+Z / Ctrl+Y or Ctrl+Shift+Z)
+   MathQuill has no built-in undo, so keep whole-sheet snapshots (every
+   line's LaTeX). Typing bursts are debounced into one undo step;
+   structural changes (add/delete/reorder/clear) snapshot immediately.
+============================================================ */
+let sheetHistory = [], hIndex = -1, histTimer = null, restoringHistory = false;
+
+function sheetSnapshot() { return allLines().map(l => l._mq ? l._mq.latex() : ''); }
+function sameSnapshot(a, b) { return a && b && a.length === b.length && a.every((s, i) => s === b[i]); }
+
+function commitHistory() {
+  clearTimeout(histTimer); histTimer = null;
+  if (restoringHistory) return;
+  const snap = sheetSnapshot();
+  if (!snap.length) return;   // transient zero-line state (mid-rebuild) is never a real step
+  if (sameSnapshot(sheetHistory[hIndex], snap)) return;
+  sheetHistory = sheetHistory.slice(0, hIndex + 1);   // editing after an undo discards the redo branch
+  sheetHistory.push(snap);
+  if (sheetHistory.length > 200) sheetHistory.shift();
+  hIndex = sheetHistory.length - 1;
+}
+function recordHistory() {
+  if (restoringHistory) return;
+  clearTimeout(histTimer);
+  histTimer = setTimeout(commitHistory, 350);
+}
+
+function restoreSnapshot(snap) {
+  restoringHistory = true;
+  const hadActive = activeLine && document.contains(activeLine);
+  let lines = allLines();
+  while (lines.length > snap.length) lines.pop().remove();
+  while (allLines().length < snap.length) addLine('', false);
+  lines = allLines();
+  snap.forEach((tex, i) => {
+    const mq = lines[i]._mq;
+    if (mq.latex() !== tex) mq.latex(tex);
+    lastLatexByLine.set(lines[i], tex);   // don't let autoArrow misread the restore as typing
+  });
+  restoringHistory = false;
+  renumber(); evaluateAll(); updateStatus();
+  if (hadActive && !document.contains(activeLine)) {
+    const last = allLines()[allLines().length - 1];
+    if (last && last._mq) last._mq.focus();
+  }
+}
+
+function undoSheet() {
+  commitHistory();               // flush any pending typing burst first
+  if (hIndex <= 0) return;
+  hIndex--;
+  restoreSnapshot(sheetHistory[hIndex]);
+}
+function redoSheet() {
+  commitHistory();
+  if (hIndex >= sheetHistory.length - 1) return;
+  hIndex++;
+  restoreSnapshot(sheetHistory[hIndex]);
+}
+
+// Capture phase so the shortcut works even while a MathQuill field has
+// focus (its hidden textarea would otherwise see the keystroke first).
+document.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const k = (e.key || '').toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); undoSheet(); }
+  else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); e.stopPropagation(); redoSheet(); }
+}, true);
+
+/* ============================================================
    Boot
 ============================================================ */
 document.addEventListener('DOMContentLoaded', () => {
@@ -562,6 +632,7 @@ document.addEventListener('DOMContentLoaded', () => {
   buildPalette();
   setupDragReorder();
   for (let i = 0; i < 3; i++) addLine('', false);
+  commitHistory();   // baseline snapshot so the first undo has somewhere to land
   const f = document.querySelector('.mq-field');
   if (f && f.__mq) f.__mq.focus();
 });
@@ -614,6 +685,7 @@ function setupDragReorder() {
     container.querySelectorAll('.drag-over-top,.drag-over-bottom').forEach(l => l.classList.remove('drag-over-top', 'drag-over-bottom'));
     dragSrc = null;
     renumber(); evaluateAll(); updateStatus();
+    commitHistory();
   }
 }
 
@@ -637,6 +709,7 @@ function fixSqrtScaling() {
    Line management
 ============================================================ */
 function addLine(latex = '', focus = true) {
+  if (!restoringHistory) commitHistory();   // capture the pre-add sheet as its own undo step
   const container = document.getElementById('lines');
   const oldAdd = container.querySelector('.add-line');
   if (oldAdd) oldAdd.remove();
@@ -669,6 +742,7 @@ function addLine(latex = '', focus = true) {
   div.querySelector('.ldel').addEventListener('click', () => deleteLine(div));
 
   renumber(); evaluateAll(); updateStatus();
+  if (!restoringHistory) commitHistory();
   if (focus) setTimeout(() => mq.focus(), 0);
   return div;
 }
@@ -680,17 +754,22 @@ function onFocusField(mq) {
 
 function deleteLine(line) {
   const lines = allLines();
-  if (lines.length <= 1) { line._mq.latex(''); evaluateAll(); return; }
+  if (lines.length <= 1) { line._mq.latex(''); evaluateAll(); commitHistory(); return; }
   const idx = lines.indexOf(line);
   const prev = lines[Math.max(0, idx - 1)];
   line.remove();
   renumber(); evaluateAll(); updateStatus();
+  commitHistory();
   prev._mq.focus();
 }
 
 function clearAll() {
+  commitHistory();          // make sure the pre-clear sheet is a step undo can return to
+  restoringHistory = true;  // the teardown/rebuild in between is not undo-able states
   document.getElementById('lines').innerHTML = '';
   addLine('', false);
+  restoringHistory = false;
+  commitHistory();          // the fresh empty sheet is the new current step
   setTimeout(() => document.querySelector('.mq-field').__mq.focus(), 0);
 }
 
@@ -950,7 +1029,7 @@ function detectCircularAssignments(linesArr) {
     const mq = line._mq;
     const latex = mq ? mq.latex() : '';
     if (!latex || !latex.trim()) continue;
-    if (/\\frac\{d\}\{d/.test(latex) || /\\int/.test(latex) || /\\sum/.test(latex) || /\\lim/.test(latex)) continue;
+    if (/\\frac\{d(\^\{?\d+\}?)?\}\{d/.test(latex) || /\\int/.test(latex) || /\\sum/.test(latex) || /\\lim/.test(latex)) continue;
     let expr;
     try { expr = latexToExpr(latex, complexMode); } catch { continue; }
     const m = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
@@ -1102,10 +1181,16 @@ function freeVar(name) { try { nerdamer.setVar(name, 'delete'); } catch {} }
 function evalLatex(latex, line) {
   nerdExact();
   // High-level notation detection (before generic conversion)
-  if (/\\frac\{d\}\{d/.test(latex))  return evalDerivative(latex);
+  if (/\\frac\{d(\^\{?\d+\}?)?\}\{d/.test(latex)) return evalDerivative(latex);
   if (/\\int/.test(latex))           return evalIntegral(latex);
   if (/\\sum/.test(latex))           return evalSum(latex);
   if (/\\lim/.test(latex))           return evalLimit(latex);
+
+  // Inequalities: without this, "x>2" would fall through to nerdamer, which
+  // quietly evaluates the comparison to 0/1 — shown as a confident numeric
+  // "answer" instead of the truth.
+  if (/[<>]|\\(geq?|leq?|neq?)(?![a-zA-Z])/.test(latex))
+    return { text: 'I can only work with equations (using =), not inequalities — try rewriting this with an equals sign.', cls: 'err' };
 
   const expr = latexToExpr(latex, complexMode);
   if (!expr.trim()) return null;
@@ -1300,7 +1385,7 @@ function solveSystems(linesArr) {
     const mq = line._mq;
     const latex = mq ? mq.latex() : '';
     if (!latex || !latex.trim()) return null;
-    if (/\\frac\{d\}\{d/.test(latex) || /\\int/.test(latex) || /\\sum/.test(latex) || /\\lim/.test(latex)) return null;
+    if (/\\frac\{d(\^\{?\d+\}?)?\}\{d/.test(latex) || /\\int/.test(latex) || /\\sum/.test(latex) || /\\lim/.test(latex)) return null;
     let expr;
     try { nerdExact(); expr = latexToExpr(latex, complexMode); } catch { return null; }
     if (!expr || !expr.trim()) return null;
@@ -1907,13 +1992,19 @@ function symbolicCmd(name, inner) {
    Calculus (from LaTeX notation)
 ============================================================ */
 function evalDerivative(latex) {
-  const m = latex.match(/\\frac\{d\}\{d\s*([a-zA-Z]|\\[a-zA-Z]+)\}/);
+  // Also matches higher orders written as a fraction: \frac{d^2}{dx^2}
+  // (without this, "d" got parsed as an ordinary variable and d²/dx²·x³
+  // silently "simplified" to d·x).
+  const m = latex.match(/\\frac\{d(?:\^\{?(\d+)\}?)?\}\{d\s*([a-zA-Z]|\\[a-zA-Z]+)(?:\^\{?(\d+)\}?)?\}/);
   if (!m) throw new Error('Bad derivative');
-  const v = aliasVar(greekName(m[1]), complexMode);
+  if (m[1] && m[3] && m[1] !== m[3])
+    return { text: `The two orders don't match — d^${m[1]} on top but d${disp(greekName(m[2]))}^${m[3]} below. Use the same power in both, like d^2/dx^2.`, cls: 'err' };
+  const order = parseInt(m[1] || m[3] || '1', 10);
+  const v = aliasVar(greekName(m[2]), complexMode);
   const operandLatex = latex.slice(m.index + m[0].length);
   const operand = stripOuter(latexToExpr(operandLatex, complexMode));
   if (!operand) return { text: 'Type something after d/dx to take its derivative.', cls: 'err' };
-  const d = nerdamer.diff(operand, v);
+  const d = nerdamer.diff(operand, v, order);
   const s = nerdamer(d.toString()).simplify();
   if (decimalMode) { const dec = tryDecimalCoeffForm(s.toString()); if (dec) return dec; }
   return { tex: safeTeX(s), text: disp(s.toString()), cls: 'sym' };
