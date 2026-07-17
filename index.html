@@ -1037,7 +1037,12 @@ function renderVarsPanel() {
     row.className = 'var-item';
     const nameEl = document.createElement('span');
     nameEl.className = 'var-name';
-    nameEl.textContent = info.label || disp(n);
+    const shown = info.label || disp(n);
+    // Greek names come through as words ("theta") — render the actual letter
+    if (GREEK_NAMES.has(shown)) {
+      try { nameEl.innerHTML = katex.renderToString('\\' + shown, { throwOnError: false }); }
+      catch { nameEl.textContent = shown; }
+    } else nameEl.textContent = shown;
     const valEl = document.createElement('span');
     valEl.className = 'var-val';
     const items = info.multi || [info];
@@ -1264,53 +1269,19 @@ function solveEquation(expr) {
   if (deg < 1) return Math.abs(coeffs[0] || 0) < 1e-9
     ? { text: `✓  True for every value of ${dv}`, cls: 'ok' }
     : { text: 'This equation has no solution.', cls: null };
-  if (deg <= 2) parts = solveLowDegree(coeffs);         // linear / quadratic → exact
-  else if (Number.isInteger(coeffs[0]) && Number.isInteger(coeffs[deg])
-           && coeffs.slice(1, -1).every(k => Math.abs(k) < 1e-12)) {
-    // Pure "x^n = c" (n ≥ 3): nerdamer's general cubic/quartic solver hands
-    // back a numeric approximation, losing the clean radical (x³=2 → 1.2599…
-    // instead of ∛2). These roots have a direct exact form — build them.
-    const c = -coeffs[0] / coeffs[deg];
-    const base = `((${Math.abs(coeffs[0])})/(${Math.abs(coeffs[deg])}))^(1/${deg})`;
-    if (c === 0) parts = [ rootFromExpr('0') ];
-    else if (deg % 2 === 1) {
-      parts = [ rootFromExpr(c > 0 ? base : `-${base}`) ];
-      // Complex mode wants the non-real roots too. The cube-root pair is a
-      // clean exact form; higher powers fall through to the numeric path.
-      if (complexMode && deg === 3)
-        parts.push(rootFromExpr(`(${parts[0].text})*((-1+sqrt(3)*i)/2)`), rootFromExpr(`(${parts[0].text})*((-1-sqrt(3)*i)/2)`));
-      else if (complexMode) parts = null;
-    } else if (c > 0) {
-      parts = [ rootFromExpr(base), rootFromExpr(`-${base}`) ];
-      if (complexMode && deg === 4) parts.push(rootFromExpr(`(${base})*i`), rootFromExpr(`-(${base})*i`));
-      else if (complexMode) parts = null;
-    }
-    else parts = complexMode ? null : [];
-  }
-  if (parts == null) {                                  // cubic+ → nerdamer, then verify
-    freeVar(v);
-    try { parts = dedupe(splitList(nerdamer.solve(poly, v).toString()).map(cleanSolution)); }
-    catch { parts = null; }
-    // nerdamer's cubic/quartic solver frequently returns flat-out WRONG
-    // complex roots (x³=8 → -1±i/2 instead of -1±√3·i; x⁴=1 → ±i/2 instead
-    // of ±i). Plug every root back into the polynomial; if any doesn't check
-    // out — or solve itself failed — recompute the whole root set numerically.
-    if (!parts || !parts.length || parts.some(p => !rootChecksOut(coeffs, p)))
-      parts = numericPolyRoots(coeffs);
-    if (!parts.length) return numericSolve(lhs, rhs, v);
-  }
+  parts = polyRootParts(coeffs, poly, v);
 
   if (!complexMode) parts = parts.filter(p => p.real);
   if (!parts.length) return { text: complexMode ? 'This equation has no solution.' : 'No real number solves this — try ℂ Complex mode to see a complex answer.', cls: null };
   if (parts.length === 1) { registerKnownValue(v, parts[0].text); return { text: null }; }
   registerMultiValue(v, parts.map(p => ({ text: p.text, tex: p.tex })));
-  return formatSolutions(parts, dv);
+  return formatSolutions(parts, v);
 }
 
-function formatSolutions(parts, dv) {
+function formatSolutions(parts, v) {
   return {
-    parts: parts.map(p => `${dv} = ${p.tex}`),
-    text: parts.map(p => `${dv} = ${p.text}`).join('   or   '),
+    parts: parts.map(p => `${dispTeX(v)} = ${p.tex}`),
+    text: parts.map(p => `${disp(v)} = ${p.text}`).join('   or   '),
     cls: 'num',
   };
 }
@@ -1425,11 +1396,13 @@ function solveSystem2x2(eqs, vars) {
   const [e1, e2] = eqs;
   const attempts = [[e1, e2, v1, v2], [e1, e2, v2, v1], [e2, e1, v1, v2], [e2, e1, v2, v1]];
   let sawContradiction = false;
+  let best = [];
 
   for (const [solveEq, subEq, solveVar, otherVar] of attempts) {
     let subs;
     freeVar(solveVar); freeVar(otherVar);
     try { subs = splitList(nerdamer.solve(solveEq, solveVar).toString()); } catch { continue; }
+    nerdExact();
     if (!subs.length || subs.length > 2) continue;
 
     const results = [];
@@ -1447,9 +1420,9 @@ function solveSystem2x2(eqs, vars) {
             if (Math.abs(coeffs[0] || 0) > 1e-9) sawContradiction = true;
             continue;
           }
-          otherRoots = deg <= 2
-            ? solveLowDegree(coeffs).map(r => r.text)
-            : dedupe(splitList(nerdamer.solve(expanded, otherVar).toString()).map(cleanSolution)).map(r => r.text);
+          // Same verified pipeline as single equations — nerdamer's raw
+          // cubic+ complex roots can't be trusted (see polyRootParts).
+          otherRoots = polyRootParts(coeffs, expanded, otherVar).map(r => r.plain || r.text);
         } else {
           otherRoots = numericRoots(expanded, otherVar);
         }
@@ -1460,9 +1433,13 @@ function solveSystem2x2(eqs, vars) {
         }
       } catch {}
     }
-    if (results.length) return results;
+    // Don't stop at the first ordering that yields anything — another
+    // ordering may produce a polynomial substitution that finds the full
+    // solution set (e.g. x²=y, xy=-8: solving for x first finds only the
+    // real pair via Newton, solving for y first finds all three exactly).
+    if (results.length > best.length) best = results;
   }
-  return sawContradiction ? [] : null;
+  return best.length ? best : (sawContradiction ? [] : null);
 }
 
 /* Real-valued roots of a single-variable expression set to zero (Newton fallback) */
@@ -1490,7 +1467,7 @@ function formatSystemDisplay(deduped) {
     return { text: complexMode ? 'This system has no solution.' : 'No real solution — try ℂ Complex mode to see a complex answer.', cls: null };
 
   return {
-    parts: deduped.map(parts => parts.map(p => `${disp(p.v)} = ${p.tex}`).join(',\\ ')),
+    parts: deduped.map(parts => parts.map(p => `${dispTeX(p.v)} = ${p.tex}`).join(',\\ ')),
     text: deduped.map(parts => parts.map(p => `${disp(p.v)} = ${p.text}`).join(', ')).join('   or   '),
     cls: 'num',
   };
@@ -1542,39 +1519,55 @@ function numericRootDisplay(val) {
   if (Math.abs(re) < 1e-9) re = 0;
   if (Math.abs(im) < 1e-9) im = 0;
   if (im === 0) return { text: fmtNum(re), tex: fmtNumTeX(re), real: true };
-  return { text: fmtMath({ isComplex: true, re, im }), tex: complexTeX({ re, im }), real: false };
+  // `plain` is a machine-parseable ASCII form (the display text uses a
+  // unicode minus and "2i" juxtaposition that nerdamer can't read back).
+  return { text: fmtMath({ isComplex: true, re, im }), tex: complexTeX({ re, im }), real: false, plain: `(${re})+(${im})*i` };
 }
 
-/* Plug a claimed root back into the polynomial (Horner, complex arithmetic)
-   and check the residual is ~zero. Guards against nerdamer.solve's wrong
-   complex roots — see solveEquation's cubic+ branch. */
-function rootChecksOut(coeffs, p) {
-  let z;
-  try { z = math.evaluate(String(p.text).replace(/−/g, '-'), {}); } catch { return false; }
-  const re = z && z.isComplex ? z.re : Number(z), im = z && z.isComplex ? z.im : 0;
-  if (!isFinite(re) || !isFinite(im)) return false;
+/* Evaluate the polynomial c0 + c1·x + … at a complex point (Horner) */
+function polyEvalC(cs, re, im) {
   let sre = 0, sim = 0;
-  for (let k = coeffs.length - 1; k >= 0; k--) {
-    const t = sre * re - sim * im + coeffs[k];
+  for (let k = cs.length - 1; k >= 0; k--) {
+    const t = sre * re - sim * im + cs[k];
     sim = sre * im + sim * re; sre = t;
   }
-  const scale = Math.max(1, ...coeffs.map(Math.abs), Math.pow(Math.hypot(re, im), coeffs.length - 1));
-  return Math.hypot(sre, sim) < 1e-6 * scale;
+  return { re: sre, im: sim };
 }
 
-/* ALL complex roots of a numeric-coefficient polynomial c0 + c1·x + … + cn·xⁿ
-   (Durand–Kerner iteration), deduped, near-integer-snapped, real roots first.
-   Used when nerdamer's symbolic solve fails verification above. */
-function numericPolyRoots(coeffs) {
+/* Parse a root's display text back to a complex point ({re, im}), or null */
+function rootZ(p) {
+  let z;
+  try { z = math.evaluate(String(p.text).replace(/−/g, '-'), {}); } catch { return null; }
+  const re = z && z.isComplex ? z.re : Number(z), im = z && z.isComplex ? z.im : 0;
+  return isFinite(re) && isFinite(im) ? { re, im } : null;
+}
+
+/* Plug a claimed root back into the polynomial and check the residual is
+   ~zero. Guards against nerdamer.solve's wrong complex roots — see
+   polyRootParts. */
+function rootChecksOut(coeffs, p) {
+  const z = rootZ(p);
+  if (!z) return false;
+  const f = polyEvalC(coeffs, z.re, z.im);
+  const scale = Math.max(1, ...coeffs.map(Math.abs), Math.pow(Math.hypot(z.re, z.im), coeffs.length - 1));
+  return Math.hypot(f.re, f.im) < 1e-6 * scale;
+}
+
+/* ALL complex roots of a numeric-coefficient polynomial (Durand–Kerner,
+   then per-root Newton polish — plain DK leaves a multiple root smeared
+   into a loose cluster of nearly-equal points; Newton's slow-but-sure
+   linear convergence near a multiple root tightens each of them onto the
+   true value so the cluster dedupes back into one root). */
+function numericPolyRootsZ(coeffs) {
   const n = coeffs.length - 1;
   const c = coeffs.map(k => k / coeffs[n]);
+  const dc = []; for (let k = 1; k <= n; k++) dc.push(c[k] * k);
   const zs = []; let re = 1, im = 0;
   for (let k = 0; k < n; k++) { const t = re * 0.4 - im * 0.9; im = re * 0.9 + im * 0.4; re = t; zs.push({ re, im }); }
   for (let iter = 0; iter < 600; iter++) {
     let moved = 0;
     for (let k = 0; k < n; k++) {
-      let fre = 0, fim = 0;
-      for (let j = n; j >= 0; j--) { const t = fre * zs[k].re - fim * zs[k].im + c[j]; fim = fre * zs[k].im + fim * zs[k].re; fre = t; }
+      const f = polyEvalC(c, zs[k].re, zs[k].im);
       let dre = 1, dim = 0;
       for (let j = 0; j < n; j++) {
         if (j === k) continue;
@@ -1582,11 +1575,20 @@ function numericPolyRoots(coeffs) {
         const t = dre * ar - dim * ai; dim = dre * ai + dim * ar; dre = t;
       }
       const den = dre * dre + dim * dim; if (den < 1e-300) continue;
-      const qre = (fre * dre + fim * dim) / den, qim = (fim * dre - fre * dim) / den;
+      const qre = (f.re * dre + f.im * dim) / den, qim = (f.im * dre - f.re * dim) / den;
       zs[k] = { re: zs[k].re - qre, im: zs[k].im - qim };
       moved = Math.max(moved, Math.hypot(qre, qim));
     }
     if (moved < 1e-13) break;
+  }
+  for (const z of zs) {
+    for (let iter = 0; iter < 120; iter++) {
+      const f = polyEvalC(c, z.re, z.im), d = polyEvalC(dc, z.re, z.im);
+      const den = d.re * d.re + d.im * d.im; if (den < 1e-300) break;
+      const qre = (f.re * d.re + f.im * d.im) / den, qim = (f.im * d.re - f.re * d.im) / den;
+      z.re -= qre; z.im -= qim;
+      if (Math.hypot(qre, qim) < 1e-15 * Math.max(1, Math.hypot(z.re, z.im))) break;
+    }
   }
   const uniq = [];
   for (const z of zs) {
@@ -1596,13 +1598,64 @@ function numericPolyRoots(coeffs) {
     if (!uniq.some(u => Math.hypot(u.re - zr.re, u.im - zr.im) < 1e-6)) uniq.push(zr);
   }
   uniq.sort((a, b) => (a.im === 0) === (b.im === 0) ? (a.re - b.re || a.im - b.im) : (a.im === 0 ? -1 : 1));
-  return uniq.map(z => numericRootDisplay(z.im === 0 ? z.re : { isComplex: true, re: z.re, im: z.im }));
+  return uniq;
+}
+
+/* Root parts for a numeric-coefficient polynomial (deg ≥ 1) in `v`:
+   exact closed forms where clean (linear/quadratic/pure powers), else
+   nerdamer verified root-by-root against the polynomial, topped up from the
+   numeric root set for anything nerdamer missed or got wrong (x³=8 →
+   -1±i/2, x⁴=1 → ±i/2 — nerdamer's cubic/quartic solver really does
+   return those). A numeric candidate that lands next to an already-verified
+   root is that same root (multiple roots come back from the numeric solver
+   as a tight cluster), not a new one. */
+function polyRootParts(coeffs, poly, v) {
+  const deg = coeffs.length - 1;
+  if (deg <= 2) return solveLowDegree(coeffs);
+  let parts = null;
+  if (Number.isInteger(coeffs[0]) && Number.isInteger(coeffs[deg])
+      && coeffs.slice(1, -1).every(k => Math.abs(k) < 1e-12)) {
+    // Pure "x^n = c": nerdamer loses the clean radical (x³=2 → 1.2599…
+    // instead of ∛2). These roots have a direct exact form — build them.
+    const c = -coeffs[0] / coeffs[deg];
+    const base = `((${Math.abs(coeffs[0])})/(${Math.abs(coeffs[deg])}))^(1/${deg})`;
+    if (c === 0) parts = [ rootFromExpr('0') ];
+    else if (deg % 2 === 1) {
+      parts = [ rootFromExpr(c > 0 ? base : `-${base}`) ];
+      // Complex mode wants the non-real roots too. The cube-root pair is a
+      // clean exact form; higher powers fall through to the numeric path.
+      if (complexMode && deg === 3)
+        parts.push(rootFromExpr(`(${parts[0].text})*((-1+sqrt(3)*i)/2)`), rootFromExpr(`(${parts[0].text})*((-1-sqrt(3)*i)/2)`));
+      else if (complexMode) parts = null;
+    } else if (c > 0) {
+      parts = [ rootFromExpr(base), rootFromExpr(`-${base}`) ];
+      if (complexMode && deg === 4) parts.push(rootFromExpr(`(${base})*i`), rootFromExpr(`-(${base})*i`));
+      else if (complexMode) parts = null;
+    }
+    else parts = complexMode ? null : [];
+  }
+  if (parts != null) return parts;
+  freeVar(v);
+  let raw = null;
+  try { raw = splitList(nerdamer.solve(poly, v).toString()); } catch {}
+  nerdExact();   // nerdamer.solve can flip PARSE2NUMBER on internally
+  parts = raw ? dedupe(raw.map(cleanSolution)) : [];
+  parts = parts.filter(p => rootChecksOut(coeffs, p));
+  const have = parts.map(rootZ).filter(Boolean);
+  for (const z of numericPolyRootsZ(coeffs)) {
+    if (have.some(h => Math.hypot(h.re - z.re, h.im - z.im) < 1e-4)) continue;
+    have.push(z);
+    parts.push(numericRootDisplay(z.im === 0 ? z.re : { isComplex: true, re: z.re, im: z.im }));
+  }
+  return parts;
 }
 
 /* Simplify an exact root expression via nerdamer → {text, tex, real} */
 function rootFromExpr(expr) {
   let s;
+  nerdExact();
   try { s = nerdamer(expr).simplify().toString(); } catch { s = expr; }
+  nerdExact();   // .simplify() can flip PARSE2NUMBER on, poisoning the re-parses below
   // nerdamer's simplify() sometimes rationalizes an irrational imaginary part
   // (e.g. sqrt(-3)) into a giant ugly fraction — prefer the unsimplified exact form then.
   // Must re-parse `expr` fresh here: .simplify() mutates its receiver in place, so
@@ -1621,6 +1674,19 @@ function rootFromExpr(expr) {
     if (Math.abs(re(orig) - re(simp)) > 1e-6 || Math.abs(im(orig) - im(simp)) > 1e-6) {
       s = nerdamer(expr).toString();
     }
+    // simplify() leaves a parenthesized power alone — a system's back-substituted
+    // value like (1+i*sqrt(3))^2 stays unexpanded. expand() is the right tool,
+    // but (as with everything nerdamer) only trust it if the value checks out.
+    if (/\)\s*\^\d/.test(s)) {
+      try {
+        // NOTE: must be the .expand() METHOD — the nerdamer.expand(str) static
+        // form rationalizes radicals into giant fractions, the method doesn't.
+        const ex = nerdamer(s).expand().toString();
+        nerdExact();
+        const exVal = math.evaluate(disp(ex), numScope);
+        if (!/\d{6,}/.test(ex) && Math.abs(re(orig) - re(exVal)) < 1e-6 && Math.abs(im(orig) - im(exVal)) < 1e-6) s = ex;
+      } catch { nerdExact(); }
+    }
     // "Decimal" display mode: show 1.732050808 instead of sqrt(3).
     if (decimalMode) { const num = numericRootDisplay(orig); if (num) return num; }
   } catch {}
@@ -1629,6 +1695,7 @@ function rootFromExpr(expr) {
 
 /* Clean up nerdamer's approximate solutions (degree ≥ 3 fallback) */
 function cleanSolution(part) {
+  nerdExact();   // often called right after nerdamer.solve, which flips PARSE2NUMBER
   const d = disp(part);
   if (/\d{6,}/.test(part)) {                  // rationalised approximation → round it
     try {
@@ -1818,7 +1885,10 @@ function plainExpr(expr) {
 function symbolicCmd(name, inner) {
   let out;
   if (name === 'factor')   out = nerdamer.factor(inner);
-  if (name === 'expand')   out = nerdamer.expand(inner);
+  // .expand() METHOD, not nerdamer.expand(str): the static form rationalizes
+  // radicals (expand(sqrt(2)*(x+1)) → 178447502/30616751-style fractions),
+  // the method keeps them exact.
+  if (name === 'expand')   out = nerdamer(inner).expand();
   if (name === 'simplify') out = nerdamer(inner).simplify();
   const str = out.toString();
   // nerdamer's expand/simplify can rationalize an irrational coefficient
@@ -2069,12 +2139,17 @@ function numericSolve(lhs, rhs, v) {
   if (found.length === 1) { registerKnownValue(v, String(found[0])); return { text: null }; }
   const dv = disp(v);
   const shown = found.slice(0, 6).sort((a, b) => a - b);
-  registerMultiValue(v, shown.map(s => ({ text: `≈ ${fmtNum(s)}`, tex: `\\approx ${fmtNumTeX(s)}` })));
-  const parts = shown.map(s => `${dv} \\approx ${fmtNum(s)}`);
+  // A root that rounds to a clean number AND satisfies the equation dead-on
+  // (|x|=5 → exactly ±5) has earned a real "=" instead of "≈".
+  const exact = s => isCleanNumber(s) && Math.abs(f(s)) < 1e-9;
+  registerMultiValue(v, shown.map(s => exact(s)
+    ? { text: fmtNum(s), tex: fmtNumTeX(s) }
+    : { text: `≈ ${fmtNum(s)}`, tex: `\\approx ${fmtNumTeX(s)}` }));
+  const parts = shown.map(s => `${dispTeX(v)} ${exact(s) ? '=' : '\\approx'} ${fmtNumTeX(s)}`);
   if (found.length > 6) parts.push('\\dots');
   return {
     parts,
-    text: shown.map(s => `${dv} ≈ ${fmtNum(s)}`).join('   or   ') + (found.length > 6 ? '   …' : ''),
+    text: shown.map(s => `${dv} ${exact(s) ? '=' : '≈'} ${fmtNum(s)}`).join('   or   ') + (found.length > 6 ? '   …' : ''),
     cls: 'num',
   };
 }
@@ -2276,6 +2351,14 @@ function splitList(str) {
   return parts;
 }
 
+/* Greek variable names arrive from LaTeX as words ("theta") — in TeX output
+   they need their backslash back or KaTeX spells them out letter-by-letter. */
+const GREEK_NAMES = new Set(['alpha','beta','gamma','delta','epsilon','varepsilon','zeta','eta','theta','iota','kappa','lambda','mu','nu','xi','rho','varrho','sigma','phi','varphi','chi','psi','omega']);
+function dispTeX(name) {
+  const d = disp(name);
+  return GREEK_NAMES.has(d) ? '\\' + d + ' ' : d;
+}
+
 /* Replace internal IVAR/unit aliases back to their real letters for display */
 function disp(str) {
   let s = String(str).replace(new RegExp(IVAR, 'g'), 'i');
@@ -2285,9 +2368,10 @@ function disp(str) {
 
 function safeTeX(x) {
   try { if (x && typeof x.toTeX === 'function') return disp(x.toTeX()); } catch {}
+  nerdExact();   // the re-parse below must stay symbolic
   try { return disp(nerdamer(x.toString()).toTeX()); } catch { return null; }   // simplify() returns a plain object
 }
-function safeTeXStr(str) { try { return disp(nerdamer(str).toTeX()); } catch { return disp(str); } }
+function safeTeXStr(str) { nerdExact(); try { return disp(nerdamer(str).toTeX()); } catch { return disp(str); } }
 
 /* Nice-fraction snapping (0.333… → 1/3) is an Exact-mode nicety; "≈ Decimal"
    mode promises plain decimals, so it must NOT re-fold 2.5 back into 5/2. */
