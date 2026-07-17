@@ -986,16 +986,22 @@ function registerKnownValue(name, valueExprStr) {
     const val = math.evaluate(valueExprStr, numScope);
     if (typeof val === 'number' && isFinite(val)) {
       numScope[name] = val;
-      try { nerdamer.setVar(name, String(val)); } catch {}
+      // Exact mode: the sidebar should show the exact form (∛2, √3, …) when
+      // the solved value has one, not the decimal — numScope still gets the
+      // number so other lines can keep computing with it. tryExactForm's own
+      // digit-run guard keeps purely-numeric roots (Newton, trig) decimal.
+      const exact = decimalMode ? null : tryExactForm(valueExprStr, val);
+      try { nerdamer.setVar(name, exact ? exact.raw : String(val)); } catch {}
       varNames.add(name);
-      knownVars.set(name, { text: fmtNum(val), tex: fmtNumTeX(val) });
+      knownVars.set(name, exact ? { text: exact.text, tex: exact.tex } : { text: fmtNum(val), tex: fmtNumTeX(val) });
       return;
     }
     if (val && val.isComplex) {
       numScope[name] = val;
       try { nerdamer.setVar(name, valueExprStr); } catch {}
       varNames.add(name);
-      knownVars.set(name, { text: fmtMath(val), tex: complexTeX(val) });
+      const exact = decimalMode ? null : tryExactForm(valueExprStr, val);
+      knownVars.set(name, exact ? { text: exact.text, tex: exact.tex } : { text: fmtMath(val), tex: complexTeX(val) });
       return;
     }
   } catch {}
@@ -1156,7 +1162,13 @@ function assign(name, rhs) {
     const val = math.evaluate(rhs, numScope);
     if (typeof val === 'number' && isFinite(val)) {
       numScope[name] = val; varNames.add(name);
-      try { nerdamer.setVar(name, String(val)); } catch {}
+      // Exact mode: "y = sqrt(3)" should show (and remember, in the sidebar
+      // and in nerdamer's symbol table) √3, not 1.732… — same helper and
+      // reasoning as plainExpr. numScope still gets the numeric value so
+      // other lines can compute with it either way.
+      const exact = decimalMode ? null : tryExactForm(rhs, val);
+      try { nerdamer.setVar(name, exact ? exact.raw : String(val)); } catch {}
+      if (exact) { knownVars.set(name, { text: exact.text, tex: exact.tex }); return exact; }
       knownVars.set(name, { text: fmtNum(val), tex: fmtNumTeX(val) });
       return { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
     }
@@ -1164,8 +1176,10 @@ function assign(name, rhs) {
       if (!complexMode && Math.abs(val.im) > 1e-12)
         return { text: 'This needs an imaginary number — turn on ℂ Complex mode (top right) to see it.', cls: 'err' };
       numScope[name] = val; varNames.add(name);
+      const exact = decimalMode ? null : tryExactForm(rhs, val);
+      if (exact) { knownVars.set(name, { text: exact.text, tex: exact.tex }); return exact; }
       knownVars.set(name, { text: fmtMath(val), tex: complexTeX(val) });
-      return { text: fmtMath(val), cls: null };
+      return { tex: complexTeX(val), text: fmtMath(val), cls: 'num' };
     }
     numScope[name] = val; varNames.add(name);
     knownVars.set(name, { text: fmtMath(val) });
@@ -1175,6 +1189,12 @@ function assign(name, rhs) {
     const s = nerdamer(rhs); const str = s.toString();
     try { nerdamer.setVar(name, str); } catch {}
     varNames.add(name);
+    // Decimal mode: fold the numeric part of a symbolic value the same way
+    // plainExpr does — "y = sqrt(3)*x" should show 1.732050808·x.
+    if (decimalMode) {
+      const dec = tryDecimalCoeffForm(rhs);
+      if (dec) { knownVars.set(name, { text: dec.text, tex: dec.tex }); return dec; }
+    }
     knownVars.set(name, { text: disp(str), tex: safeTeX(s) });
     return { tex: safeTeX(s), text: disp(str), cls: 'sym' };
   } catch { throw new Error('Cannot evaluate'); }
@@ -1238,12 +1258,46 @@ function solveEquation(expr) {
 
   let parts;
   const deg = coeffs.length - 1;
-  if (deg < 1) return { text: 'This equation has no solution.', cls: null };
+  // The unknown cancelled out entirely. A leftover nonzero constant (x = x+1 →
+  // -1) means no value ever works; a leftover ZERO (x+1 = x+1) means every
+  // value works — which is the opposite of "no solution".
+  if (deg < 1) return Math.abs(coeffs[0] || 0) < 1e-9
+    ? { text: `✓  True for every value of ${dv}`, cls: 'ok' }
+    : { text: 'This equation has no solution.', cls: null };
   if (deg <= 2) parts = solveLowDegree(coeffs);         // linear / quadratic → exact
-  else {                                                // cubic+ → nerdamer, then tidy
+  else if (Number.isInteger(coeffs[0]) && Number.isInteger(coeffs[deg])
+           && coeffs.slice(1, -1).every(k => Math.abs(k) < 1e-12)) {
+    // Pure "x^n = c" (n ≥ 3): nerdamer's general cubic/quartic solver hands
+    // back a numeric approximation, losing the clean radical (x³=2 → 1.2599…
+    // instead of ∛2). These roots have a direct exact form — build them.
+    const c = -coeffs[0] / coeffs[deg];
+    const base = `((${Math.abs(coeffs[0])})/(${Math.abs(coeffs[deg])}))^(1/${deg})`;
+    if (c === 0) parts = [ rootFromExpr('0') ];
+    else if (deg % 2 === 1) {
+      parts = [ rootFromExpr(c > 0 ? base : `-${base}`) ];
+      // Complex mode wants the non-real roots too. The cube-root pair is a
+      // clean exact form; higher powers fall through to the numeric path.
+      if (complexMode && deg === 3)
+        parts.push(rootFromExpr(`(${parts[0].text})*((-1+sqrt(3)*i)/2)`), rootFromExpr(`(${parts[0].text})*((-1-sqrt(3)*i)/2)`));
+      else if (complexMode) parts = null;
+    } else if (c > 0) {
+      parts = [ rootFromExpr(base), rootFromExpr(`-${base}`) ];
+      if (complexMode && deg === 4) parts.push(rootFromExpr(`(${base})*i`), rootFromExpr(`-(${base})*i`));
+      else if (complexMode) parts = null;
+    }
+    else parts = complexMode ? null : [];
+  }
+  if (parts == null) {                                  // cubic+ → nerdamer, then verify
     freeVar(v);
     try { parts = dedupe(splitList(nerdamer.solve(poly, v).toString()).map(cleanSolution)); }
-    catch { return numericSolve(lhs, rhs, v); }
+    catch { parts = null; }
+    // nerdamer's cubic/quartic solver frequently returns flat-out WRONG
+    // complex roots (x³=8 → -1±i/2 instead of -1±√3·i; x⁴=1 → ±i/2 instead
+    // of ±i). Plug every root back into the polynomial; if any doesn't check
+    // out — or solve itself failed — recompute the whole root set numerically.
+    if (!parts || !parts.length || parts.some(p => !rootChecksOut(coeffs, p)))
+      parts = numericPolyRoots(coeffs);
+    if (!parts.length) return numericSolve(lhs, rhs, v);
   }
 
   if (!complexMode) parts = parts.filter(p => p.real);
@@ -1491,6 +1545,60 @@ function numericRootDisplay(val) {
   return { text: fmtMath({ isComplex: true, re, im }), tex: complexTeX({ re, im }), real: false };
 }
 
+/* Plug a claimed root back into the polynomial (Horner, complex arithmetic)
+   and check the residual is ~zero. Guards against nerdamer.solve's wrong
+   complex roots — see solveEquation's cubic+ branch. */
+function rootChecksOut(coeffs, p) {
+  let z;
+  try { z = math.evaluate(String(p.text).replace(/−/g, '-'), {}); } catch { return false; }
+  const re = z && z.isComplex ? z.re : Number(z), im = z && z.isComplex ? z.im : 0;
+  if (!isFinite(re) || !isFinite(im)) return false;
+  let sre = 0, sim = 0;
+  for (let k = coeffs.length - 1; k >= 0; k--) {
+    const t = sre * re - sim * im + coeffs[k];
+    sim = sre * im + sim * re; sre = t;
+  }
+  const scale = Math.max(1, ...coeffs.map(Math.abs), Math.pow(Math.hypot(re, im), coeffs.length - 1));
+  return Math.hypot(sre, sim) < 1e-6 * scale;
+}
+
+/* ALL complex roots of a numeric-coefficient polynomial c0 + c1·x + … + cn·xⁿ
+   (Durand–Kerner iteration), deduped, near-integer-snapped, real roots first.
+   Used when nerdamer's symbolic solve fails verification above. */
+function numericPolyRoots(coeffs) {
+  const n = coeffs.length - 1;
+  const c = coeffs.map(k => k / coeffs[n]);
+  const zs = []; let re = 1, im = 0;
+  for (let k = 0; k < n; k++) { const t = re * 0.4 - im * 0.9; im = re * 0.9 + im * 0.4; re = t; zs.push({ re, im }); }
+  for (let iter = 0; iter < 600; iter++) {
+    let moved = 0;
+    for (let k = 0; k < n; k++) {
+      let fre = 0, fim = 0;
+      for (let j = n; j >= 0; j--) { const t = fre * zs[k].re - fim * zs[k].im + c[j]; fim = fre * zs[k].im + fim * zs[k].re; fre = t; }
+      let dre = 1, dim = 0;
+      for (let j = 0; j < n; j++) {
+        if (j === k) continue;
+        const ar = zs[k].re - zs[j].re, ai = zs[k].im - zs[j].im;
+        const t = dre * ar - dim * ai; dim = dre * ai + dim * ar; dre = t;
+      }
+      const den = dre * dre + dim * dim; if (den < 1e-300) continue;
+      const qre = (fre * dre + fim * dim) / den, qim = (fim * dre - fre * dim) / den;
+      zs[k] = { re: zs[k].re - qre, im: zs[k].im - qim };
+      moved = Math.max(moved, Math.hypot(qre, qim));
+    }
+    if (moved < 1e-13) break;
+  }
+  const uniq = [];
+  for (const z of zs) {
+    const zr = { re: Math.abs(z.re) < 1e-9 ? 0 : z.re, im: Math.abs(z.im) < 1e-9 ? 0 : z.im };
+    if (Math.abs(zr.re - Math.round(zr.re)) < 1e-9) zr.re = Math.round(zr.re);
+    if (Math.abs(zr.im - Math.round(zr.im)) < 1e-9) zr.im = Math.round(zr.im);
+    if (!uniq.some(u => Math.hypot(u.re - zr.re, u.im - zr.im) < 1e-6)) uniq.push(zr);
+  }
+  uniq.sort((a, b) => (a.im === 0) === (b.im === 0) ? (a.re - b.re || a.im - b.im) : (a.im === 0 ? -1 : 1));
+  return uniq.map(z => numericRootDisplay(z.im === 0 ? z.re : { isComplex: true, re: z.re, im: z.im }));
+}
+
 /* Simplify an exact root expression via nerdamer → {text, tex, real} */
 function rootFromExpr(expr) {
   let s;
@@ -1575,11 +1683,17 @@ function tryExactForm(expr, val) {
     const s = nerdamer(expr); const str = s.toString();
     const dstr = disp(str);
     if (/^-?\d+(\.\d+)?$/.test(dstr)) return null;         // nerdamer also just gives a plain number
+    // A long digit run means nerdamer merely rationalized a decimal into a
+    // giant fraction (e.g. "1.5707963…" → 31415…/20000…) — that's not a
+    // genuinely exact form, it's the same decimal wearing a costume.
+    if (/\d{6,}/.test(dstr)) return null;
     const check = math.evaluate(dstr, numScope);
     const checkRe = check && check.isComplex ? check.re : (typeof check === 'number' ? check : NaN);
     const checkIm = check && check.isComplex ? check.im : 0;
     if (!isFinite(checkRe) || Math.abs(checkRe - valRe) > 1e-6 || Math.abs(checkIm - valIm) > 1e-6) return null;
-    return { tex: safeTeX(s), text: dstr, cls: 'sym' };
+    // `raw` keeps nerdamer's own (un-disp'd) string so callers can feed it
+    // back into nerdamer.setVar without losing the exact form.
+    return { tex: safeTeX(s), text: dstr, cls: 'sym', raw: str };
   } catch { return null; }
 }
 
@@ -1702,7 +1816,6 @@ function plainExpr(expr) {
    Symbolic word-commands
 ============================================================ */
 function symbolicCmd(name, inner) {
-  const s = complexMode ? inner : inner.replace(new RegExp(IVAR, 'g'), 'i');
   let out;
   if (name === 'factor')   out = nerdamer.factor(inner);
   if (name === 'expand')   out = nerdamer.expand(inner);
@@ -2176,18 +2289,22 @@ function safeTeX(x) {
 }
 function safeTeXStr(str) { try { return disp(nerdamer(str).toTeX()); } catch { return disp(str); } }
 
+/* Nice-fraction snapping (0.333… → 1/3) is an Exact-mode nicety; "≈ Decimal"
+   mode promises plain decimals, so it must NOT re-fold 2.5 back into 5/2. */
 function fmtNum(x) {
   if (typeof x !== 'number' || !isFinite(x)) return String(x);
   const r = Math.round(x);
   if (Math.abs(x - r) < 1e-10) return String(r);
-  for (let d = 2; d <= 1000; d++) { const n = Math.round(x*d); if (n !== 0 && Math.abs(n/d - x) < 1e-9 && Math.abs(n) <= d*25) return `${n}/${d}`; }
+  if (!decimalMode)
+    for (let d = 2; d <= 1000; d++) { const n = Math.round(x*d); if (n !== 0 && Math.abs(n/d - x) < 1e-9 && Math.abs(n) <= d*25) return `${n}/${d}`; }
   return parseFloat(x.toPrecision(10)).toString();
 }
 function fmtNumTeX(x) {
   if (typeof x !== 'number' || !isFinite(x)) return String(x);
   const r = Math.round(x);
   if (Math.abs(x - r) < 1e-10) return String(r);
-  for (let d = 2; d <= 1000; d++) { const n = Math.round(x*d); if (n !== 0 && Math.abs(n/d - x) < 1e-9 && Math.abs(n) <= d*25) return `\\frac{${n}}{${d}}`; }
+  if (!decimalMode)
+    for (let d = 2; d <= 1000; d++) { const n = Math.round(x*d); if (n !== 0 && Math.abs(n/d - x) < 1e-9 && Math.abs(n) <= d*25) return `\\frac{${n}}{${d}}`; }
   return parseFloat(x.toPrecision(10)).toString();
 }
 function complexTeX(v) {
