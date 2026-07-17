@@ -632,7 +632,10 @@ document.addEventListener('DOMContentLoaded', () => {
   buildPalette();
   setupDragReorder();
   for (let i = 0; i < 3; i++) addLine('', false);
-  commitHistory();   // baseline snapshot so the first undo has somewhere to land
+  // The per-addLine snapshots taken while building the initial sheet aren't
+  // real user steps — undo must never dismantle the starting three lines.
+  sheetHistory = []; hIndex = -1;
+  commitHistory();   // single baseline snapshot for the first undo to land on
   const f = document.querySelector('.mq-field');
   if (f && f.__mq) f.__mq.focus();
 });
@@ -1029,7 +1032,7 @@ function detectCircularAssignments(linesArr) {
     const mq = line._mq;
     const latex = mq ? mq.latex() : '';
     if (!latex || !latex.trim()) continue;
-    if (/\\frac\{d(\^\{?\d+\}?)?\}\{d/.test(latex) || /\\int/.test(latex) || /\\sum/.test(latex) || /\\lim/.test(latex)) continue;
+    if (/\\frac\{d(\^\{?\d+\}?)?\}\{d/.test(latex) || /\\int/.test(latex) || /\\sum/.test(latex) || /\\prod/.test(latex) || /\\lim/.test(latex)) continue;
     let expr;
     try { expr = latexToExpr(latex, complexMode); } catch { continue; }
     const m = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
@@ -1184,6 +1187,7 @@ function evalLatex(latex, line) {
   if (/\\frac\{d(\^\{?\d+\}?)?\}\{d/.test(latex)) return evalDerivative(latex);
   if (/\\int/.test(latex))           return evalIntegral(latex);
   if (/\\sum/.test(latex))           return evalSum(latex);
+  if (/\\prod/.test(latex))          return evalProd(latex);
   if (/\\lim/.test(latex))           return evalLimit(latex);
 
   // Inequalities: without this, "x>2" would fall through to nerdamer, which
@@ -1385,7 +1389,7 @@ function solveSystems(linesArr) {
     const mq = line._mq;
     const latex = mq ? mq.latex() : '';
     if (!latex || !latex.trim()) return null;
-    if (/\\frac\{d(\^\{?\d+\}?)?\}\{d/.test(latex) || /\\int/.test(latex) || /\\sum/.test(latex) || /\\lim/.test(latex)) return null;
+    if (/\\frac\{d(\^\{?\d+\}?)?\}\{d/.test(latex) || /\\int/.test(latex) || /\\sum/.test(latex) || /\\prod/.test(latex) || /\\lim/.test(latex)) return null;
     let expr;
     try { nerdExact(); expr = latexToExpr(latex, complexMode); } catch { return null; }
     if (!expr || !expr.trim()) return null;
@@ -1933,6 +1937,7 @@ function plainExpr(expr) {
       }
       if (typeof val === 'number' && !isFinite(val)) {
         if (Number.isNaN(val) || expr.includes('/')) return { text: 'That’s undefined — probably dividing by zero.', cls: 'err' };
+        if (/\blog\(/.test(expr)) return { text: 'That’s undefined — log of 0 has no value (it dives toward −∞).', cls: 'err' };
         return { text: 'That number is too big for me to calculate exactly.', cls: 'err' };
       }
       return { text: fmtMath(val), cls: null };
@@ -2061,6 +2066,28 @@ function evalSum(latex) {
   if (hi - lo > 100000) return { text: 'That range is too big — try a smaller range for the sum.', cls: 'err' };
   let acc = 0;
   for (let k = lo; k <= hi; k++) acc += Number(math.evaluate(body, { ...numScope, [v]: k }));
+  return { tex: fmtNumTeX(acc), text: fmtNum(acc), cls: 'num' };
+}
+
+/* Π products — same shape as Σ sums (typing "prod" builds the notation, so
+   it had better actually compute instead of parsing as p·r·o·d). */
+function evalProd(latex) {
+  const HELP = 'To type a product: type the start value, press Tab (or →) to jump to the top limit, type the end value, press Tab again, then what to multiply. It works like the Σ sum, but multiplying.';
+  const m = latex.match(/\\prod_\{([a-zA-Z])\s*=\s*([^}]*)\}\^\{([^}]*)\}/);
+  if (!m || !m[3].trim()) return { text: HELP, cls: 'err' };
+  const v = aliasVar(m[1], complexMode);
+  let lo, hi;
+  try {
+    lo = Math.round(math.evaluate(stripOuter(latexToExpr(m[2], complexMode)), numScope));
+    hi = Math.round(math.evaluate(stripOuter(latexToExpr(m[3], complexMode)), numScope));
+  } catch { return { text: HELP, cls: 'err' }; }
+  if (!isFinite(lo) || !isFinite(hi)) return { text: HELP, cls: 'err' };
+  const rest = latex.slice(m.index + m[0].length);
+  const body = stripOuter(latexToExpr(rest, complexMode)) || '1';
+  if (hi - lo > 10000) return { text: 'That range is too big — try a smaller range for the product.', cls: 'err' };
+  let acc = 1;
+  for (let k = lo; k <= hi; k++) acc *= Number(math.evaluate(body, { ...numScope, [v]: k }));
+  if (!isFinite(acc)) return { text: 'That product grows past what I can calculate — try a smaller range.', cls: 'err' };
   return { tex: fmtNumTeX(acc), text: fmtNum(acc), cls: 'num' };
 }
 
