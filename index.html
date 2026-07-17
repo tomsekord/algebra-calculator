@@ -1226,18 +1226,32 @@ function calcEquationCheck(latex) {
   const CANT = { text: 'I can’t solve equations built around d/dx, ∫, Σ, Π or lim — put the calculus part on its own line and I’ll compute it.', cls: 'err' };
   const L = latex.slice(0, at), R = latex.slice(at + 1);
   if (!L.trim() || !R.trim()) return CANT;
-  let lv, rv;
-  try { lv = evalLatex(L, null); rv = evalLatex(R, null); } catch { return CANT; }
-  if (!lv || !rv || lv.cls === 'err' || rv.cls === 'err' || !lv.text || !rv.text) return CANT;
-  const calcOnLeft = /\\frac\{d(\^\{?\d+\}?)?\}\{d|\\int|\\sum|\\prod|\\lim/.test(L);
-  const calcText = (calcOnLeft ? lv : rv).text;
+  const CALC = /\\frac\{d(\^\{?\d+\}?)?\}\{d|\\int|\\sum|\\prod|\\lim/;
   const clean = s => String(s).replace(/\s*\+\s*C\s*$/, '');   // indefinite integrals: constants can differ
-  const lt = clean(lv.text), rt = clean(rv.text);
+  // A calculus side gets computed; a plain side stays as its RAW expression —
+  // evaluating it would bake in any known variable value (x=2 elsewhere would
+  // turn "2x" into the number 4 while the derivative stays symbolic in x).
+  const sideVal = (tex) => {
+    try {
+      if (CALC.test(tex)) { const r = evalLatex(tex, null); return r && r.cls !== 'err' && r.text ? clean(r.text) : null; }
+      const e = stripOuter(latexToExpr(tex, complexMode));
+      return e && e.trim() ? disp(e) : null;
+    } catch { return null; }
+  };
+  const lt = sideVal(L), rt = sideVal(R);
+  if (lt == null || rt == null) return CANT;
+  const calcText = CALC.test(L) ? lt : rt;
   const vars = [...new Set([...findUnknowns(lt), ...findUnknowns(rt)])];
   let compared = 0;
   for (let trial = 0; trial < 12 && compared < 5; trial++) {
     const scope = { ...numScope };
-    vars.forEach((v, j) => { scope[v] = -2.3 + 4.9 * (((trial + 1) * 0.373 + j * 0.71) % 1); });
+    // Variables with a known numeric value keep it (matching what nerdamer
+    // substituted while computing the calculus side); truly free ones get
+    // the same sample value on both sides.
+    vars.forEach((v, j) => {
+      const known = numScope[aliasVar(v, complexMode)];
+      scope[v] = typeof known === 'number' ? known : -2.3 + 4.9 * (((trial + 1) * 0.373 + j * 0.71) % 1);
+    });
     let l, r;
     try { l = math.evaluate(lt, scope); r = math.evaluate(rt, scope); } catch { continue; }
     if (typeof l !== 'number' || typeof r !== 'number' || !isFinite(l) || !isFinite(r)) continue;
@@ -2064,6 +2078,10 @@ function evalDerivative(latex) {
   const operandLatex = latex.slice(m.index + m[0].length);
   const operand = stripOuter(latexToExpr(operandLatex, complexMode));
   if (!operand) return { text: 'Type something after d/dx to take its derivative.', cls: 'err' };
+  // If v has a solved/assigned value, nerdamer's symbol table would
+  // substitute it BEFORE differentiating — d/dx x² with x=2 elsewhere
+  // becomes d/dx 4 = 0. The differentiation variable must stay a variable.
+  freeVar(v);
   const d = nerdamer.diff(operand, v, order);
   const s = nerdamer(d.toString()).simplify();
   if (decimalMode) { const dec = tryDecimalCoeffForm(s.toString()); if (dec) return dec; }
@@ -2097,6 +2115,7 @@ function evalIntegral(latex) {
     const val = simpson(x => math.evaluate(operand, { ...numScope, [v]: x }), lo, hi);
     return { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
   }
+  freeVar(v);   // same reason as evalDerivative: ∫x²dx with x=2 known must not become ∫4dx
   const I = nerdamer.integrate(operand, v);          // indefinite → symbolic
   if (decimalMode) {
     const dec = tryDecimalCoeffForm(I.toString());
@@ -2107,13 +2126,16 @@ function evalIntegral(latex) {
 
 function evalSum(latex) {
   const HELP = 'To type a sum by hand: type the start value, press Tab (or →) to jump to the top limit, type the end value, press Tab (or →) again, then type what to add up. Or use the Σ button under "More functions" to build it for you.';
-  const m = latex.match(/\\sum_\{([a-zA-Z])\s*=\s*([^}]*)\}\^\{([^}]*)\}/);
-  if (!m || !m[3].trim()) return { text: HELP, cls: 'err' };   // empty top limit → Tab was never pressed
+  // The top limit is braced only when multi-character — MathQuill re-serializes
+  // ^{5} as ^5 (same quirk as integral bounds), so match either shape.
+  const m = latex.match(/\\sum_\{([a-zA-Z])\s*=\s*([^}]*)\}\^(\{[^}]*\}|[^\s{}])/);
+  const top = m ? (m[3][0] === '{' ? m[3].slice(1, -1) : m[3]) : '';
+  if (!m || !top.trim()) return { text: HELP, cls: 'err' };   // empty top limit → Tab was never pressed
   const v = aliasVar(m[1], complexMode);
   let lo, hi;
   try {
     lo = Math.round(math.evaluate(stripOuter(latexToExpr(m[2], complexMode)), numScope));
-    hi = Math.round(math.evaluate(stripOuter(latexToExpr(m[3], complexMode)), numScope));
+    hi = Math.round(math.evaluate(stripOuter(latexToExpr(top, complexMode)), numScope));
   } catch { return { text: HELP, cls: 'err' }; }
   if (!isFinite(lo) || !isFinite(hi)) return { text: HELP, cls: 'err' };
   const rest = latex.slice(m.index + m[0].length);
@@ -2128,13 +2150,14 @@ function evalSum(latex) {
    it had better actually compute instead of parsing as p·r·o·d). */
 function evalProd(latex) {
   const HELP = 'To type a product: type the start value, press Tab (or →) to jump to the top limit, type the end value, press Tab again, then what to multiply. It works like the Σ sum, but multiplying.';
-  const m = latex.match(/\\prod_\{([a-zA-Z])\s*=\s*([^}]*)\}\^\{([^}]*)\}/);
-  if (!m || !m[3].trim()) return { text: HELP, cls: 'err' };
+  const m = latex.match(/\\prod_\{([a-zA-Z])\s*=\s*([^}]*)\}\^(\{[^}]*\}|[^\s{}])/);
+  const top = m ? (m[3][0] === '{' ? m[3].slice(1, -1) : m[3]) : '';
+  if (!m || !top.trim()) return { text: HELP, cls: 'err' };
   const v = aliasVar(m[1], complexMode);
   let lo, hi;
   try {
     lo = Math.round(math.evaluate(stripOuter(latexToExpr(m[2], complexMode)), numScope));
-    hi = Math.round(math.evaluate(stripOuter(latexToExpr(m[3], complexMode)), numScope));
+    hi = Math.round(math.evaluate(stripOuter(latexToExpr(top, complexMode)), numScope));
   } catch { return { text: HELP, cls: 'err' }; }
   if (!isFinite(lo) || !isFinite(hi)) return { text: HELP, cls: 'err' };
   const rest = latex.slice(m.index + m[0].length);
