@@ -1184,6 +1184,14 @@ function freeVar(name) { try { nerdamer.setVar(name, 'delete'); } catch {} }
 function evalLatex(latex, line) {
   nerdExact();
   // High-level notation detection (before generic conversion)
+  // "d/dx x² = 2x" — an equation with calculus on one side is a "check my
+  // work" question, not something the solvers can handle (they'd crash deep
+  // inside nerdamer). Verify it numerically instead.
+  if (/\\frac\{d(\^\{?\d+\}?)?\}\{d|\\int|\\sum|\\prod|\\lim/.test(latex)) {
+    const chk = calcEquationCheck(latex);
+    if (chk) return chk;
+  }
+
   if (/\\frac\{d(\^\{?\d+\}?)?\}\{d/.test(latex)) return evalDerivative(latex);
   if (/\\int/.test(latex))           return evalIntegral(latex);
   if (/\\sum/.test(latex))           return evalSum(latex);
@@ -1201,15 +1209,62 @@ function evalLatex(latex, line) {
   return evalExpr(expr, line);
 }
 
+/* An equation whose sides include calculus notation: evaluate each side on
+   its own (recursing through evalLatex — a side without a top-level "=" can
+   never re-enter here), then compare the two numerically at sample points.
+   Returns null if the line has no top-level "=" (normal calculus routing
+   applies). */
+function calcEquationCheck(latex) {
+  let depth = 0, at = -1;
+  for (let i = 0; i < latex.length; i++) {
+    const c = latex[i];
+    if (c === '{') depth++;
+    else if (c === '}') depth--;
+    else if (c === '=' && depth === 0) { at = i; break; }   // depth>0 skips \sum_{n=1}
+  }
+  if (at < 0) return null;
+  const CANT = { text: 'I can’t solve equations built around d/dx, ∫, Σ, Π or lim — put the calculus part on its own line and I’ll compute it.', cls: 'err' };
+  const L = latex.slice(0, at), R = latex.slice(at + 1);
+  if (!L.trim() || !R.trim()) return CANT;
+  let lv, rv;
+  try { lv = evalLatex(L, null); rv = evalLatex(R, null); } catch { return CANT; }
+  if (!lv || !rv || lv.cls === 'err' || rv.cls === 'err' || !lv.text || !rv.text) return CANT;
+  const calcOnLeft = /\\frac\{d(\^\{?\d+\}?)?\}\{d|\\int|\\sum|\\prod|\\lim/.test(L);
+  const calcText = (calcOnLeft ? lv : rv).text;
+  const clean = s => String(s).replace(/\s*\+\s*C\s*$/, '');   // indefinite integrals: constants can differ
+  const lt = clean(lv.text), rt = clean(rv.text);
+  const vars = [...new Set([...findUnknowns(lt), ...findUnknowns(rt)])];
+  let compared = 0;
+  for (let trial = 0; trial < 12 && compared < 5; trial++) {
+    const scope = { ...numScope };
+    vars.forEach((v, j) => { scope[v] = -2.3 + 4.9 * (((trial + 1) * 0.373 + j * 0.71) % 1); });
+    let l, r;
+    try { l = math.evaluate(lt, scope); r = math.evaluate(rt, scope); } catch { continue; }
+    if (typeof l !== 'number' || typeof r !== 'number' || !isFinite(l) || !isFinite(r)) continue;
+    if (Math.abs(l - r) > 1e-6 * Math.max(1, Math.abs(l), Math.abs(r)))
+      return { text: `✗  False — it actually works out to ${clean(calcText)}`, cls: null };
+    compared++;
+  }
+  if (compared < 2) return CANT;
+  return { text: '✓  True', cls: 'ok' };
+}
+
 /* ── Evaluate a converted expression ── */
 function evalExpr(expr, line) {
   // Symbolic word-commands: factor(...), expand(...), simplify(...)
   const cmd = expr.match(/^(factor|expand|simplify)\((.*)\)$/s);
   if (cmd) return symbolicCmd(cmd[1], cmd[2]);
 
+  const trimmed = expr.trim();
+
+  // Two or more equals signs (x=y=3): mathjs would treat the inner "y=3" as
+  // an assignment and silently create y as a side effect — refuse clearly.
+  // "==" pairs don't count: that's mathjs's comparison operator (2==2 → true).
+  if ((trimmed.replace(/==/g, '').match(/=/g) || []).length > 1)
+    return { text: 'One equals sign per line, please — split this into separate lines.', cls: 'err' };
+
   // Trailing "=" with nothing after it (e.g. "7*8=") → just show the answer,
   // like pressing "=" on a calculator, instead of comparing against an empty right side.
-  const trimmed = expr.trim();
   if (trimmed.endsWith('=') && !trimmed.endsWith('==')) return plainExpr(trimmed.slice(0, -1));
 
   // Function definition:  f(x) = <formula>
