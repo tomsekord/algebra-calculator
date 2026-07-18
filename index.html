@@ -259,8 +259,17 @@
     .kb-qrow .kb.mod.active { background:linear-gradient(135deg,var(--accent),var(--accent-l)); color:#fff; border-color:transparent; }
     .kb-qrow .kb.del { flex:1.4; }
     .kb-qrow .kb.enter { flex:1.6; }
-    .kb-qrow .kb sub { font-size:.65em; }
+    .kb-qrow .kb sub, .kb-qrow .kb sup { font-size:.65em; }
     .kb-flash { outline:2px solid var(--accent-l); outline-offset:4px; border-radius:10px; transition:outline-color .2s; }
+    /* The 13-key symbol row gets cramped on small screens (or zoomed-in
+       windows) — let it wrap into two comfortable lines instead of
+       squeezing every key below readable size. */
+    @media (max-width:560px) {
+      .kb-qrow-sym { flex-wrap:wrap; }
+      .kb-qrow-sym .kb { flex:1 1 44px; padding:10px 0; font-size:1rem; }
+      .kb-qrow-sym .kb.mod, .kb-qrow-sym .kb.enter { flex:1 1 56px; }
+      .kb-qrow .kb { padding:11px 0; font-size:1rem; }
+    }
 
     /* ── Function palette modal ── */
     .modal-overlay {
@@ -834,6 +843,11 @@ function pressLetter(ch) {
   if (kbShift) { kbShift = false; buildQwerty(); }   // one-shot shift, like a phone keyboard
 }
 function toggleShift() { kbShift = !kbShift; buildQwerty(); }
+/* Shift-variant keys (θ→τ, a_b→a^b): fire the variant, then release shift */
+function pressShifted(cmd) {
+  K.cmd(cmd);
+  if (kbShift) { kbShift = false; buildQwerty(); }
+}
 function flashKeypad() {
   const el = document.querySelector('.kb-desmos');
   if (!el) return;
@@ -848,12 +862,16 @@ function buildQwerty() {
   const letters = ch => `<button class="kb var" onclick="pressLetter('${ch}')">${kbShift ? ch.toUpperCase() : ch}</button>`;
   const row1 = 'qwertyuiop'.split('').map(letters).join('');
   const row2 = 'asdfghjkl'.split('').map(letters).join('') +
-               `<button class="kb var" onclick="K.cmd('\\\\theta')">θ</button>`;
+               (kbShift
+                 ? `<button class="kb var" onclick="pressShifted('\\\\tau')" title="tau (2π)">τ</button>`
+                 : `<button class="kb var" onclick="K.cmd('\\\\theta')">θ</button>`);
   const row3 = `<button class="kb mod ${kbShift ? 'active' : ''}" onclick="toggleShift()">⬆</button>` +
                'zxcvbnm'.split('').map(letters).join('') +
                `<button class="kb del" onclick="K.backspace()">⌫</button>`;
   const row4 = `<button class="kb mod" onclick="flashKeypad()">123</button>` +
-               `<button class="kb op" onclick="K.cmd('_')" title="Subscript">a<sub>b</sub></button>` +
+               (kbShift
+                 ? `<button class="kb op" onclick="pressShifted('^')" title="Superscript (power)">a<sup>b</sup></button>`
+                 : `<button class="kb op" onclick="K.cmd('_')" title="Subscript">a<sub>b</sub></button>`) +
                `<button class="kb op" onclick="K.type('!')">!</button>` +
                `<button class="kb op" onclick="K.type('%')">%</button>` +
                `<button class="kb op" onclick="K.type('[')">[</button>` +
@@ -869,7 +887,7 @@ function buildQwerty() {
     `<div class="kb-qrow">${row1}</div>` +
     `<div class="kb-qrow">${row2}</div>` +
     `<div class="kb-qrow">${row3}</div>` +
-    `<div class="kb-qrow">${row4}</div>`;
+    `<div class="kb-qrow kb-qrow-sym">${row4}</div>`;
 }
 
 /* ============================================================
