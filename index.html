@@ -252,6 +252,16 @@
       .kb.enter { flex:2; }
     }
 
+    /* ── QWERTY letter rows ── */
+    .kb-qrow { display:flex; gap:6px; margin-bottom:6px; }
+    .kb-qrow .kb { flex:1; min-width:0; padding:9px 0; font-size:.95rem; }
+    .kb-qrow .kb.mod { flex:1.4; background:var(--surface2, rgba(255,255,255,.06)); }
+    .kb-qrow .kb.mod.active { background:linear-gradient(135deg,var(--accent),var(--accent-l)); color:#fff; border-color:transparent; }
+    .kb-qrow .kb.del { flex:1.4; }
+    .kb-qrow .kb.enter { flex:1.6; }
+    .kb-qrow .kb sub { font-size:.65em; }
+    .kb-flash { outline:2px solid var(--accent-l); outline-offset:4px; border-radius:10px; transition:outline-color .2s; }
+
     /* ── Function palette modal ── */
     .modal-overlay {
       position:fixed; inset:0; background:rgba(0,0,0,.6); backdrop-filter:blur(3px);
@@ -411,29 +421,9 @@
         <button class="kb special" onclick="openPalette()">∑ &nbsp;More functions…</button>
       </div>
 
-      <div class="kb-section-label">Variables</div>
-        <div class="kb-row">
-        <button class="kb var" onclick="K.type('x')">x</button>
-        <button class="kb var" onclick="K.type('y')">y</button>
-        <button class="kb var" onclick="K.type('z')">z</button>
-        <button class="kb var" onclick="K.type('a')">a</button>
-        <button class="kb var" onclick="K.type('b')">b</button>
-        <button class="kb var" onclick="K.type('c')">c</button>
-        <button class="kb var" onclick="K.type('d')">d</button>
-        <button class="kb var" onclick="K.type('f')">f</button>
-        <button class="kb var" onclick="K.type('g')">g</button>
-        <button class="kb var" onclick="K.type('k')">k</button>
-        <button class="kb var" onclick="K.type('m')">m</button>
-        <button class="kb var" onclick="K.type('n')">n</button>
-        <button class="kb var" onclick="K.type('p')">p</button>
-        <button class="kb var" onclick="K.type('q')">q</button>
-        <button class="kb var" onclick="K.type('r')">r</button>
-        <button class="kb var" onclick="K.type('s')">s</button>
-        <button class="kb var" onclick="K.type('t')">t</button>
-        <button class="kb var" onclick="K.type('u')">u</button>
-        <button class="kb var" onclick="K.type('v')">v</button>
-        <button class="kb var" onclick="K.type('w')">w</button>
-        <button class="kb var" onclick="K.cmd('\\theta')">θ</button>
+      <div class="kb-section-label">Letters &amp; symbols</div>
+      <div id="qwerty"></div>
+      <div class="kb-row" style="margin-top:6px">
         <button class="kb var" onclick="K.cmd('\\alpha')">α</button>
         <button class="kb var" onclick="K.cmd('\\beta')">β</button>
         <button class="kb var" onclick="K.cmd('\\lambda')">λ</button>
@@ -630,6 +620,7 @@ document.addEventListener('keydown', e => {
 document.addEventListener('DOMContentLoaded', () => {
   fixSqrtScaling();
   buildPalette();
+  buildQwerty();
   setupDragReorder();
   for (let i = 0; i < 3; i++) addLine('', false);
   // The per-addLine snapshots taken while building the initial sheet aren't
@@ -831,6 +822,55 @@ const K = {
   right()  { const mq = this.ensure(); if (mq) { mq.keystroke('Right'); mq.focus(); } },
   enter()  { const mq = this.ensure(); if (mq) { mq.typedText('\n'); } },
 };
+
+/* ============================================================
+   QWERTY letter keyboard (Desmos-style) — full alphabet, shift for
+   uppercase, plus the symbol row: subscript, ! % [ ] { } ~ : , ' ↵
+============================================================ */
+let kbShift = false;
+
+function pressLetter(ch) {
+  K.type(kbShift ? ch.toUpperCase() : ch);
+  if (kbShift) { kbShift = false; buildQwerty(); }   // one-shot shift, like a phone keyboard
+}
+function toggleShift() { kbShift = !kbShift; buildQwerty(); }
+function flashKeypad() {
+  const el = document.querySelector('.kb-desmos');
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  el.classList.add('kb-flash');
+  setTimeout(() => el.classList.remove('kb-flash'), 700);
+}
+
+function buildQwerty() {
+  const host = document.getElementById('qwerty');
+  if (!host) return;
+  const letters = ch => `<button class="kb var" onclick="pressLetter('${ch}')">${kbShift ? ch.toUpperCase() : ch}</button>`;
+  const row1 = 'qwertyuiop'.split('').map(letters).join('');
+  const row2 = 'asdfghjkl'.split('').map(letters).join('') +
+               `<button class="kb var" onclick="K.cmd('\\\\theta')">θ</button>`;
+  const row3 = `<button class="kb mod ${kbShift ? 'active' : ''}" onclick="toggleShift()">⬆</button>` +
+               'zxcvbnm'.split('').map(letters).join('') +
+               `<button class="kb del" onclick="K.backspace()">⌫</button>`;
+  const row4 = `<button class="kb mod" onclick="flashKeypad()">123</button>` +
+               `<button class="kb op" onclick="K.cmd('_')" title="Subscript">a<sub>b</sub></button>` +
+               `<button class="kb op" onclick="K.type('!')">!</button>` +
+               `<button class="kb op" onclick="K.type('%')">%</button>` +
+               `<button class="kb op" onclick="K.type('[')">[</button>` +
+               `<button class="kb op" onclick="K.type(']')">]</button>` +
+               `<button class="kb op" onclick="K.type('{')">{</button>` +
+               `<button class="kb op" onclick="K.type('}')">}</button>` +
+               `<button class="kb op" onclick="K.type('~')">~</button>` +
+               `<button class="kb op" onclick="K.type(':')">:</button>` +
+               `<button class="kb op" onclick="K.type(',')">,</button>` +
+               `<button class="kb op" onclick="K.type('\\'')" title="Derivative prime">'</button>` +
+               `<button class="kb enter" onclick="K.enter()">↵</button>`;
+  host.innerHTML =
+    `<div class="kb-qrow">${row1}</div>` +
+    `<div class="kb-qrow">${row2}</div>` +
+    `<div class="kb-qrow">${row3}</div>` +
+    `<div class="kb-qrow">${row4}</div>`;
+}
 
 /* ============================================================
    Function palette
@@ -1216,6 +1256,8 @@ function evalLatex(latex, line) {
   // "answer" instead of the truth.
   if (/[<>]|\\(geq?|leq?|neq?)(?![a-zA-Z])/.test(latex))
     return { text: 'I can only work with equations (using =), not inequalities — try rewriting this with an equals sign.', cls: 'err' };
+  if (/\\sim(?![a-zA-Z])|:/.test(latex))
+    return { text: 'The ~ and : symbols aren’t math I can compute — use = for equations, or / for ratios and fractions.', cls: 'err' };
 
   const expr = latexToExpr(latex, complexMode);
   if (!expr.trim()) return null;
@@ -2411,7 +2453,8 @@ function latexToExpr(tex, complex) {
     .replace(/\\left\./g, '(').replace(/\\right\./g, ')')
     .replace(/\\left/g, '').replace(/\\right/g, '')
     .replace(/\\,/g, ' ').replace(/\\!/g, '').replace(/\\;/g, ' ').replace(/\\ /g, ' ')
-    .replace(/\\cdot/g, '*').replace(/\\times/g, '*').replace(/\\div/g, '/');
+    .replace(/\\cdot/g, '*').replace(/\\times/g, '*').replace(/\\div/g, '/')
+    .replace(/\\%/g, '%');
 
   let i = 0;
 
@@ -2515,6 +2558,7 @@ function latexToExpr(tex, complex) {
       if (c === '{') { i++; const inner = parseSeq('}'); if (s[i] === '}') i++; V('(' + inner + ')'); continue; }
       if (c === '^') { i++; out += '^' + parseArg(); lastVal = true; continue; }
       if (c === '_') { i++; const sub = stripOuter(parseArg()).replace(/[^a-zA-Z0-9]/g, ''); out += sub; lastVal = true; continue; }
+      if (c === '%') { out += '/100'; i++; continue; }   // postfix percent: 50% → 50/100 (lastVal stays true)
       if (c === '+' || c === '-' || c === '/' || c === '=' || c === ',' || c === '*') { O(c); i++; continue; }
       if (c === ' ') { i++; continue; }
       if (c === '\\') { const r = parseCommand(); if (r === '*' || r === '/') O(r); else V(r); continue; }
