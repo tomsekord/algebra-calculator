@@ -926,6 +926,23 @@ function setDecimal(on) {
   evaluateAll();
 }
 
+/* Match a "name(param) = ..." head in a line's RAW latex, normalizing the
+   shapes MathQuill produces for subscripted names (f_1 / f_{12} → f1) and
+   prime marks (f' → fPRIME1) so they line up with what latexToExpr emits.
+   Builtins are excluded — "sin(x) = 0.5" is an equation, not a definition
+   (\sin arrives with a backslash anyway, but typed forms shouldn't slip in). */
+function funcDefHead(line) {
+  const mq = line._mq;
+  const latex = mq ? mq.latex() : '';
+  if (!latex) return null;
+  const stripped = latex
+    .replace(/\\left/g, '').replace(/\\right/g, '')
+    .replace(/_\{(\w+)\}/g, '$1').replace(/_(\w)/g, '$1')
+    .replace(/([a-zA-Z]\w*)('+)/g, (m, n, q) => `${n}PRIME${Math.min(q.length, 9)}`);
+  const m = stripped.match(/^([a-zA-Z]\w*)\(([a-zA-Z]\w*)\)\s*=(?!=)/);
+  return m && !BUILTINS.has(m[1]) ? m : null;
+}
+
 function evaluateAll() {
   try { nerdamer.clearVars(); } catch {}
   numScope = {}; varNames = new Set(); knownVars = new Map(); primaryDefLine = new Map(); primaryFuncDefLine = new Map();
@@ -938,10 +955,7 @@ function evaluateAll() {
   // the normal parser).
   knownFunctionNames = new Set();
   linesArr.forEach(line => {
-    const mq = line._mq;
-    const latex = mq ? mq.latex() : '';
-    const stripped = latex ? latex.replace(/\\left/g, '').replace(/\\right/g, '') : '';
-    const m = stripped.match(/^([a-zA-Z])\(([a-zA-Z])\)\s*=(?!=)/);
+    const m = funcDefHead(line);
     if (m) knownFunctionNames.add(m[1]);
   });
 
@@ -949,10 +963,7 @@ function evaluateAll() {
   // "f(x) = 9" isn't a redefinition of f, it's an equation to solve for x
   // using the already-known f — see evalExpr's fdef handling.
   linesArr.forEach(line => {
-    const mq = line._mq;
-    const latex = mq ? mq.latex() : '';
-    const stripped = latex ? latex.replace(/\\left/g, '').replace(/\\right/g, '') : '';
-    const m = stripped.match(/^([a-zA-Z])\(([a-zA-Z])\)\s*=(?!=)/);
+    const m = funcDefHead(line);
     if (m && !primaryFuncDefLine.has(m[1])) primaryFuncDefLine.set(m[1], line);
   });
 
@@ -1120,9 +1131,11 @@ function renderVarsPanel() {
     const nameEl = document.createElement('span');
     nameEl.className = 'var-name';
     const shown = info.label || disp(n);
-    // Greek names come through as words ("theta") — render the actual letter
-    if (GREEK_NAMES.has(shown)) {
-      try { nameEl.innerHTML = katex.renderToString('\\' + shown, { throwOnError: false }); }
+    // Names that have a nicer TeX form — Greek words (theta → θ), subscript
+    // style (x1 → x₁), function labels with primes — render through KaTeX.
+    const texName = info.labelTex || (!info.label && dispTeX(n) !== shown ? dispTeX(n) : null);
+    if (texName) {
+      try { nameEl.innerHTML = katex.renderToString(texName, { throwOnError: false }); }
       catch { nameEl.textContent = shown; }
     } else nameEl.textContent = shown;
     const valEl = document.createElement('span');
@@ -1253,7 +1266,10 @@ function calcEquationCheck(latex) {
       scope[v] = typeof known === 'number' ? known : -2.3 + 4.9 * (((trial + 1) * 0.373 + j * 0.71) % 1);
     });
     let l, r;
-    try { l = math.evaluate(lt, scope); r = math.evaluate(rt, scope); } catch { continue; }
+    // Display text writes derivatives with quotes (f') — mathjs needs the
+    // internal callable name (fPRIME1) back for evaluation.
+    const evalForm = s => s.replace(/([a-zA-Z]\w*)('+)/g, (m, n, q) => `${n}PRIME${q.length}`);
+    try { l = math.evaluate(evalForm(lt), scope); r = math.evaluate(evalForm(rt), scope); } catch { continue; }
     if (typeof l !== 'number' || typeof r !== 'number' || !isFinite(l) || !isFinite(r)) continue;
     if (Math.abs(l - r) > 1e-6 * Math.max(1, Math.abs(l), Math.abs(r)))
       return { text: `✗  False — it actually works out to ${clean(calcText)}`, cls: null };
@@ -1281,9 +1297,10 @@ function evalExpr(expr, line) {
   // like pressing "=" on a calculator, instead of comparing against an empty right side.
   if (trimmed.endsWith('=') && !trimmed.endsWith('==')) return plainExpr(trimmed.slice(0, -1));
 
-  // Function definition:  f(x) = <formula>
-  const fdef = expr.match(/^([a-zA-Z])\(([a-zA-Z]\w*)\)\s*=(?!=)\s*(.+)$/);
-  if (fdef) {
+  // Function definition:  f(x) = <formula>  (also f1, fPRIME1 — but never a
+  // builtin: "sin(x) = 0.5" is an equation to solve, not a definition of sin)
+  const fdef = expr.match(/^([a-zA-Z]\w*)\(([a-zA-Z]\w*)\)\s*=(?!=)\s*(.+)$/);
+  if (fdef && !BUILTINS.has(fdef[1])) {
     // Same "first line owns it" rule as plain variable reassignment: a later
     // "f(x) = 9" (from a different line than the one that defined f) is an
     // equation to solve for x using the already-known f, not a redefinition.
@@ -1309,6 +1326,12 @@ function evalExpr(expr, line) {
       return solveEquation(`(${numScope[asgn[1]]})=(${asgn[2]})`);
     return assign(asgn[1], asgn[2]);
   }
+
+  // A prime (f') only means something once f itself is defined — without
+  // this, f'(2) with no f around becomes the implicit product 2·f'.
+  const orphan = trimmed.match(/([a-zA-Z]\w*?)PRIME\d+/);
+  if (orphan && !knownFunctionNames.has(orphan[1]) && !knownFunctionNames.has(orphan[0]))
+    return { text: `You used ${disp(orphan[0])} but ${disp(orphan[1])} isn't defined — add a line like "${disp(orphan[1])}(x) = ..." first.`, cls: 'err' };
 
   // Equation
   if (/(?<![=!<>])=(?!=)/.test(expr)) return solveEquation(expr);
@@ -1369,13 +1392,28 @@ function defineFunction(name, param, rhs) {
   try { math.evaluate(`${name}(${param}) = ${rhs}`, numScope); }
   catch { return { text: `Couldn't make sense of that formula for ${disp(name)}(${disp(param)}).`, cls: 'err' }; }
   try { nerdamer.setFunction(name, [param], rhs); } catch {}
+  // f'(x) / f''(x): pre-compute the first and second derivative as callable
+  // functions (latexToExpr rewrites the quote notation to these names).
+  // freeVar first — a solved value for the parameter elsewhere would poison
+  // the differentiation, same bug class as evalDerivative.
+  try {
+    let dRhs = rhs;
+    for (let k = 1; k <= 2; k++) {
+      freeVar(param);
+      dRhs = nerdamer.diff(dRhs, param).toString();
+      nerdExact();
+      nerdamer.setFunction(`${name}PRIME${k}`, [param], dRhs);
+      math.evaluate(`${name}PRIME${k}(${param}) = ${dRhs}`, numScope);
+      knownFunctionNames.add(`${name}PRIME${k}`);
+    }
+  } catch {}
   // Decimal mode should apply to a function's formula too, e.g.
   // "f(x) = sqrt(3)*x" -> "f(x) = 1.732050808*x" — same fold-the-constants
   // helper plainExpr uses for the same reason.
   let rhsText = disp(rhs), rhsTex = safeTeXStr(rhs);
   if (decimalMode) { const dec = tryDecimalCoeffForm(rhs); if (dec) { rhsText = dec.text; rhsTex = dec.tex; } }
-  knownVars.set(name, { text: rhsText, tex: rhsTex, label: `${disp(name)}(${disp(param)})` });
-  return { tex: `${disp(name)}(${disp(param)}) = ${rhsTex}`, text: `${disp(name)}(${disp(param)}) = ${rhsText}`, cls: 'sym' };
+  knownVars.set(name, { text: rhsText, tex: rhsTex, label: `${disp(name)}(${disp(param)})`, labelTex: `${dispTeX(name)}(${dispTeX(param)})` });
+  return { tex: `${dispTeX(name)}(${dispTeX(param)}) = ${rhsTex}`, text: `${disp(name)}(${disp(param)}) = ${rhsText}`, cls: 'sym' };
 }
 
 function solveEquation(expr) {
@@ -2447,14 +2485,30 @@ function latexToExpr(tex, complex) {
       if (c === '}' || c === ')') break;
       if (/[0-9.]/.test(c)) { let n = ''; while (i < s.length && /[0-9.]/.test(s[i])) n += s[i++]; V(n); continue; }
       if (/[a-zA-Z]/.test(c)) {
-        const name = s[i++];
+        let name = s[i++];
+        // A letter followed by digits is ONE subscript-style variable — x1, x2,
+        // f1 — like Desmos, not x·1. ("2x", digit first, stays 2·x.)
+        while (i < s.length && /[0-9]/.test(s[i])) name += s[i++];
+        // True subscripts fold into the same name (x_1 ≡ x1, f_{12} ≡ f12) —
+        // handled here rather than the generic "_" branch so that a
+        // subscripted FUNCTION name (f_1(x)) still gets call detection below.
+        if (s[i] === '_') {
+          const save = i; i++;
+          const sub = stripOuter(parseArg()).replace(/[^a-zA-Z0-9]/g, '');
+          if (sub) name += sub; else i = save;
+        }
+        // f'(x) → the pre-computed derivative function (defineFunction sets up
+        // fPRIME1/fPRIME2 alongside f; disp() turns PRIMEn back into quotes).
+        let primes = 0;
+        while (s[i] === "'") { primes++; i++; }
+        const callName = primes ? `${name}PRIME${Math.min(primes, 9)}` : name;
         // f(x) → a real function call, not "f * (x)", when f is a name the user
         // has defined with "f(x) = ..." somewhere. Anything else keeps the old
         // implicit-multiplication behavior (e.g. "x(y+1)" stays x*(y+1)).
-        if (s[i] === '(' && knownFunctionNames.has(name)) {
+        if (s[i] === '(' && (knownFunctionNames.has(name) || knownFunctionNames.has(callName))) {
           i++; const inner = parseSeq(')'); if (s[i] === ')') i++;
-          V(name + '(' + inner + ')');
-        } else V(name);
+          V(callName + '(' + inner + ')');
+        } else V(callName);
         continue;
       }
       if (c === '(') { i++; const inner = parseSeq(')'); if (s[i] === ')') i++; V('(' + inner + ')'); continue; }
@@ -2552,13 +2606,21 @@ function splitList(str) {
 const GREEK_NAMES = new Set(['alpha','beta','gamma','delta','epsilon','varepsilon','zeta','eta','theta','iota','kappa','lambda','mu','nu','xi','rho','varrho','sigma','phi','varphi','chi','psi','omega']);
 function dispTeX(name) {
   const d = disp(name);
-  return GREEK_NAMES.has(d) ? '\\' + d + ' ' : d;
+  if (GREEK_NAMES.has(d)) return '\\' + d + ' ';
+  const sub = d.match(/^([a-zA-Z]+?)(\d+)$/);   // x1 → x₁, theta1 → θ₁
+  if (sub) {
+    if (GREEK_NAMES.has(sub[1])) return `\\${sub[1]}_{${sub[2]}}`;
+    if (sub[1].length === 1) return `${sub[1]}_{${sub[2]}}`;
+  }
+  return d;
 }
 
 /* Replace internal IVAR/unit aliases back to their real letters for display */
 function disp(str) {
   let s = String(str).replace(new RegExp(IVAR, 'g'), 'i');
   for (const [letter, alias] of Object.entries(UNIT_ALIASES)) s = s.replace(new RegExp(alias, 'g'), letter);
+  // internal derivative-function names (fPRIME1) → back to quote notation (f')
+  s = s.replace(/PRIME(\d+)/g, (m, k) => "'".repeat(+k));
   return s;
 }
 
