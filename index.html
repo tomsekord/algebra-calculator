@@ -1394,7 +1394,7 @@ function evalExpr(expr, line) {
     return { text: `You used ${disp(orphan[0])} but ${disp(orphan[1])} isn't defined — add a line like "${disp(orphan[1])}(x) = ..." first.`, cls: 'err' };
 
   // Equation
-  if (/(?<![=!<>])=(?!=)/.test(expr)) return solveEquation(expr);
+  if (/(?<![=<>])=(?!=)/.test(expr)) return solveEquation(expr);
 
   // Plain expression
   return plainExpr(expr);
@@ -1477,10 +1477,17 @@ function defineFunction(name, param, rhs) {
 }
 
 function solveEquation(expr) {
-  const eq = expr.match(/(?<![=!<>])=(?!=)/);
+  const eq = expr.match(/(?<![=<>])=(?!=)/);
   const lhs = expr.slice(0, eq.index).trim();
   const rhs = expr.slice(eq.index + 1).trim();
-  const unknowns = findUnknowns(expr);
+  let unknowns = findUnknowns(expr);
+  // Names that already have a value (x=1 and y=2 on other lines) aren't
+  // unknowns — x+y+z=6 should just solve z, not complain about "x, y, z".
+  // But only narrow when something genuinely unknown remains: a re-evaluated
+  // pass of "x^3=2" (x now known from ITS OWN earlier pass) must keep
+  // re-solving as usual rather than flipping into a True/False verdict.
+  const freeU = unknowns.filter(n => !Object.prototype.hasOwnProperty.call(numScope, n));
+  if (freeU.length && freeU.length < unknowns.length) unknowns = freeU;
 
   if (unknowns.length === 0) {
     try {
@@ -1490,8 +1497,7 @@ function solveEquation(expr) {
       return { text: same ? '✓  True' : '✗  False', cls: same ? 'ok' : null };
     } catch { return { text: 'Couldn’t check whether this is true — check your typing.', cls: 'err' }; }
   }
-  if (unknowns.length > 1)
-    return { text: `This has more than one unknown (${unknowns.map(disp).join(', ')}). Add another equation using the same variable(s) on another line and I’ll try to solve them together.`, cls: 'err' };
+  if (unknowns.length > 1) return solveForOne(lhs, rhs, unknowns);
 
   const v = unknowns[0], dv = disp(v);
 
@@ -1502,8 +1508,13 @@ function solveEquation(expr) {
   // valid math. Catch that up front with one substitution-based test eval.
   try { math.evaluate(lhs, { ...numScope, [v]: 1 }); math.evaluate(rhs, { ...numScope, [v]: 1 }); }
   catch (e) {
-    if (/unexpected|syntax/i.test(e.message || ''))
-      return { text: 'That doesn’t look like valid math — check for a missing number or a trailing +, -, *, or /.', cls: 'err' };
+    // mathjs words its parse errors several ways ("Unexpected end of expression",
+    // "Value expected" for an empty exponent box like "1^", "Parenthesis expected"…)
+    // — treat them all as invalid math, but never "Undefined symbol", which is a
+    // legitimately unknown name rather than broken syntax.
+    const msg = e.message || '';
+    if (!/undefined/i.test(msg) && /unexpected|syntax|expected|end of|parenthesis/i.test(msg))
+      return { text: 'That doesn’t look like valid math — check for an empty exponent or root box, a missing number, or a trailing +, -, *, or /.', cls: 'err' };
   }
 
   const poly = `(${lhs})-(${rhs})`;
@@ -1560,7 +1571,7 @@ function solveSystems(linesArr) {
     let expr;
     try { nerdExact(); expr = latexToExpr(latex, complexMode); } catch { return null; }
     if (!expr || !expr.trim()) return null;
-    const eqMatch = expr.match(/(?<![=!<>])=(?!=)/);
+    const eqMatch = expr.match(/(?<![=<>])=(?!=)/);
     if (!eqMatch) return null;
     const lhs = expr.slice(0, eqMatch.index).trim();
     const rhs = expr.slice(eqMatch.index + 1).trim();
@@ -2417,9 +2428,104 @@ function trySimpleTrigInverse(lhs, rhs, v) {
   return { text: null };
 }
 
+/* One equation, several unknowns: instead of refusing, isolate one variable
+   in terms of the others (x+y+z=6 → x = 6−y−z; x²+y²=1 → x = ±√(1−y²)).
+   Prefers x, then tries the unknowns in order of appearance until nerdamer
+   manages one — every candidate answer is verified numerically at sampled
+   values of the other unknowns before being trusted. */
+function solveForOne(lhs, rhs, unknowns) {
+  const CANT = { text: `This has more than one unknown (${unknowns.map(disp).join(', ')}) and I couldn’t isolate one of them. Add another equation using the same variable(s) on another line and I’ll try to solve them together.`, cls: 'err' };
+  const order = [...unknowns].sort((a, b) => (disp(b) === 'x') - (disp(a) === 'x'));
+  const poly = `(${lhs})-(${rhs})`;
+  for (const v of order) {
+    freeVar(v);
+    let raw = null;
+    try { raw = splitList(nerdamer.solve(poly, v).toString()); } catch {}
+    nerdExact();
+    if (!raw || !raw.length) continue;
+    // nerdamer likes shapes like -(-6+y+z); expanding gives the friendlier 6-y-z
+    raw = raw.map(r => {
+      try { const ex = nerdamer(r).expand().toString(); nerdExact(); if (ex && !/\d{6,}/.test(ex)) return ex; } catch { nerdExact(); }
+      return r;
+    });
+    let parts = dedupe(raw.map(r => ({ text: disp(r), tex: safeTeXStr(r), real: !/\bi\b/.test(disp(r)) })));
+    // verify: sample the other unknowns, compute v from the candidate, and
+    // plug everything back into the original equation (complex-tolerant)
+    parts = parts.filter(p => {
+      let good = 0;
+      for (let trial = 0; trial < 6 && good < 3; trial++) {
+        // known values come along under their DISPLAY names, to match the
+        // disp()'d expression texts being evaluated here
+        const scope = {};
+        for (const [k, kv] of Object.entries(numScope)) scope[disp(k)] = kv;
+        unknowns.forEach((u, j) => { if (u !== v) scope[disp(u)] = -1.7 + 3.9 * (((trial + 1) * 0.41 + j * 0.63) % 1); });
+        let vv; try { vv = math.evaluate(p.text.replace(/−/g, '-'), scope); } catch { continue; }
+        scope[disp(v)] = vv;
+        let L, R; try { L = math.evaluate(disp(lhs), scope); R = math.evaluate(disp(rhs), scope); } catch { continue; }
+        let d, size;
+        try { d = math.abs(math.subtract(L, R)); size = Math.max(1, math.abs(L), math.abs(R)); } catch { continue; }
+        if (!(d / size < 1e-6)) return false;
+        good++;
+      }
+      return good > 0;
+    });
+    if (!complexMode) parts = parts.filter(p => p.real);
+    if (parts.length) return formatSolutions(parts, v);
+  }
+  return CANT;
+}
+
 function numericSolve(lhs, rhs, v) {
-  const f = x => { try { return math.evaluate(lhs, { ...numScope, [v]: x }) - math.evaluate(rhs, { ...numScope, [v]: x }); } catch { return NaN; } };
-  const found = findRealRoots(f);
+  // Newton iterates on the smooth RAW difference, but a candidate only
+  // counts as a root if the two sides agree RELATIVELY: for 2^x = 3^x both
+  // sides underflow toward 0 as x → −∞, so a bare |L−R| < ε test "finds"
+  // roots at any very negative x. Non-real values (complex from a negative
+  // base) count as undefined, not as zero.
+  const sides = x => {
+    try {
+      const L = math.evaluate(lhs, { ...numScope, [v]: x }), R = math.evaluate(rhs, { ...numScope, [v]: x });
+      return (typeof L === 'number' && typeof R === 'number' && isFinite(L) && isFinite(R)) ? [L, R] : null;
+    } catch { return null; }
+  };
+  const f = x => { const s = sides(x); return s ? s[0] - s[1] : NaN; };
+  // "both sides ≈ 0" is only meaningful where the functions still have real
+  // scale nearby — deep in the underflow zone every value is 0 or denormal,
+  // and equality there says nothing.
+  const nearbyScale = x => [0.5, -0.5, 1e-3, -1e-3].some(dx => {
+    const s = sides(x + dx);
+    return s && Math.max(Math.abs(s[0]), Math.abs(s[1])) >= 1e-300;
+  });
+  const isRoot = x => {
+    const s = sides(x); if (!s) return false;
+    const [L, R] = s;
+    if (L === R && L !== 0) return Math.abs(L) >= 1e-300 || nearbyScale(x);
+    if (L === 0 && R === 0) return nearbyScale(x);
+    if (!(Math.abs(L - R) / Math.max(Math.abs(L), Math.abs(R)) < 1e-9)) return false;
+    return Math.max(Math.abs(L), Math.abs(R)) >= 1e-300 || nearbyScale(x);
+  };
+  let found = findRealRoots(f).filter(isRoot);
+  // Some equations are only defined at isolated points — 2^x = (−64)^√x is
+  // complex everywhere except where √x lands on an integer, so Newton (which
+  // needs a neighborhood) can never reach the root at x=36. Sweep half-integer
+  // points directly for exact hits Newton missed.
+  for (let xi = -1000; xi <= 1000; xi += 0.5) {
+    if (isRoot(xi) && !found.some(r => Math.abs(r - xi) < 1e-6)) found.push(xi);
+  }
+  // A tangential root (sin x = x at 0, where the curves only graze) makes
+  // Newton stall anywhere in a tiny zone around it, yielding a cluster of
+  // near-identical "roots" — merge each cluster, preferring the clean value.
+  found.sort((a, b) => a - b);
+  const merged = [];
+  for (const r of found) {
+    if (merged.length && Math.abs(r - merged[merged.length - 1]) < 1e-3) {
+      const prev = merged[merged.length - 1];
+      const cleaner = (isCleanNumber(r) && !isCleanNumber(prev)) ||
+                      (isCleanNumber(r) === isCleanNumber(prev) && Math.abs(f(r)) < Math.abs(f(prev)));
+      if (cleaner) merged[merged.length - 1] = r;
+    } else merged.push(r);
+  }
+  found = merged;
+  found.sort((a, b) => Math.abs(a) - Math.abs(b));
   // This numeric fallback only ever searches for REAL roots (Newton's method
   // on plain JS numbers) — it has no way to find a complex one. Saying
   // "couldn't find a real number" implies a complex answer might still be
@@ -2738,7 +2844,7 @@ function niceError(msg = '') {
   const m = disp(msg);
   const bad = m.match(/undefined symbol\s*(\S+)/i);
   if (bad) return `I don't recognize "${bad[1]}" — check the spelling or pick it from the keyboard below.`;
-  if (/unexpected|cannot read prop/i.test(m)) return 'That doesn’t look like valid math — check for typos or a missing symbol.';
+  if (/unexpected|cannot read prop|value expected|end of expression|parenthesis/i.test(m)) return 'That doesn’t look like valid math — check for typos, an empty exponent or root box, or a missing symbol.';
   if (/cannot evaluate/i.test(m)) return 'I couldn’t work that out — check your expression.';
   if (/maximum call stack/i.test(m)) return 'That function calls itself — make sure its formula doesn’t use its own name.';
   return 'Something’s not right here — check your typing.';
