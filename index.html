@@ -987,11 +987,12 @@ function setDecimal(on) {
   evaluateAll();
 }
 
-/* Match a "name(param) = ..." head in a line's RAW latex, normalizing the
-   shapes MathQuill produces for subscripted names (f_1 / f_{12} → f1) and
-   prime marks (f' → fPRIME1) so they line up with what latexToExpr emits.
-   Builtins are excluded — "sin(x) = 0.5" is an equation, not a definition
-   (\sin arrives with a backslash anyway, but typed forms shouldn't slip in). */
+/* Match a "name(param, ...) = ..." head in a line's RAW latex, normalizing
+   the shapes MathQuill produces for subscripted names (f_1 / f_{12} → f1)
+   and prime marks (f' → fPRIME1) so they line up with what latexToExpr
+   emits. Builtins are excluded — "sin(x) = 0.5" is an equation, not a
+   definition (\sin arrives with a backslash anyway, but typed forms
+   shouldn't slip in). */
 function funcDefHead(line) {
   const mq = line._mq;
   const latex = mq ? mq.latex() : '';
@@ -1000,7 +1001,7 @@ function funcDefHead(line) {
     .replace(/\\left/g, '').replace(/\\right/g, '')
     .replace(/_\{(\w+)\}/g, '$1').replace(/_(\w)/g, '$1')
     .replace(/([a-zA-Z]\w*)('+)/g, (m, n, q) => `${n}PRIME${Math.min(q.length, 9)}`);
-  const m = stripped.match(/^([a-zA-Z]\w*)\(([a-zA-Z]\w*)\)\s*=(?!=)/);
+  const m = stripped.match(/^([a-zA-Z]\w*)\(\s*([a-zA-Z]\w*(?:\s*,\s*[a-zA-Z]\w*)*)\s*\)\s*=(?!=)/);
   return m && !BUILTINS.has(m[1]) ? m : null;
 }
 
@@ -1360,9 +1361,10 @@ function evalExpr(expr, line) {
   // like pressing "=" on a calculator, instead of comparing against an empty right side.
   if (trimmed.endsWith('=') && !trimmed.endsWith('==')) return plainExpr(trimmed.slice(0, -1));
 
-  // Function definition:  f(x) = <formula>  (also f1, fPRIME1 — but never a
-  // builtin: "sin(x) = 0.5" is an equation to solve, not a definition of sin)
-  const fdef = expr.match(/^([a-zA-Z]\w*)\(([a-zA-Z]\w*)\)\s*=(?!=)\s*(.+)$/);
+  // Function definition:  f(x) = <formula>, or f(x,y) = <formula> for
+  // several parameters (also f1, fPRIME1 — but never a builtin: "sin(x) =
+  // 0.5" is an equation to solve, not a definition of sin)
+  const fdef = expr.match(/^([a-zA-Z]\w*)\(\s*([a-zA-Z]\w*(?:\s*,\s*[a-zA-Z]\w*)*)\s*\)\s*=(?!=)\s*(.+)$/);
   if (fdef && !BUILTINS.has(fdef[1])) {
     // Same "first line owns it" rule as plain variable reassignment: a later
     // "f(x) = 9" (from a different line than the one that defined f) is an
@@ -1463,34 +1465,43 @@ function assign(name, rhs) {
   } catch { throw new Error('Cannot evaluate'); }
 }
 
-function defineFunction(name, param, rhs) {
+function defineFunction(name, paramStr, rhs) {
   if (RESERVED_CONSTANTS.has(name))
     return { text: `"${disp(name)}" is a reserved constant — pick a different function name.`, cls: 'err' };
-  try { math.evaluate(`${name}(${param}) = ${rhs}`, numScope); }
-  catch { return { text: `Couldn't make sense of that formula for ${disp(name)}(${disp(param)}).`, cls: 'err' }; }
-  try { nerdamer.setFunction(name, [param], rhs); } catch {}
+  const params = paramStr.split(',').map(p => p.trim()).filter(Boolean);
+  const paramsList = params.join(',');
+  try { math.evaluate(`${name}(${paramsList}) = ${rhs}`, numScope); }
+  catch { return { text: `Couldn't make sense of that formula for ${disp(name)}(${params.map(disp).join(', ')}).`, cls: 'err' }; }
+  try { nerdamer.setFunction(name, params, rhs); } catch {}
   // f'(x) / f''(x): pre-compute the first and second derivative as callable
-  // functions (latexToExpr rewrites the quote notation to these names).
-  // freeVar first — a solved value for the parameter elsewhere would poison
-  // the differentiation, same bug class as evalDerivative.
-  try {
-    let dRhs = rhs;
-    for (let k = 1; k <= 2; k++) {
-      freeVar(param);
-      dRhs = nerdamer.diff(dRhs, param).toString();
-      nerdExact();
-      nerdamer.setFunction(`${name}PRIME${k}`, [param], dRhs);
-      math.evaluate(`${name}PRIME${k}(${param}) = ${dRhs}`, numScope);
-      knownFunctionNames.add(`${name}PRIME${k}`);
-    }
-  } catch {}
+  // functions (latexToExpr rewrites the quote notation to these names) —
+  // only meaningful for a single parameter, since a partial derivative of a
+  // multi-variable function has no single unambiguous "f'".
+  if (params.length === 1) {
+    const param = params[0];
+    try {
+      let dRhs = rhs;
+      for (let k = 1; k <= 2; k++) {
+        // freeVar first — a solved value for the parameter elsewhere would
+        // poison the differentiation, same bug class as evalDerivative.
+        freeVar(param);
+        dRhs = nerdamer.diff(dRhs, param).toString();
+        nerdExact();
+        nerdamer.setFunction(`${name}PRIME${k}`, [param], dRhs);
+        math.evaluate(`${name}PRIME${k}(${param}) = ${dRhs}`, numScope);
+        knownFunctionNames.add(`${name}PRIME${k}`);
+      }
+    } catch {}
+  }
   // Decimal mode should apply to a function's formula too, e.g.
   // "f(x) = sqrt(3)*x" -> "f(x) = 1.732050808*x" — same fold-the-constants
   // helper plainExpr uses for the same reason.
   let rhsText = disp(rhs), rhsTex = safeTeXStr(rhs);
   if (decimalMode) { const dec = tryDecimalCoeffForm(rhs); if (dec) { rhsText = dec.text; rhsTex = dec.tex; } }
-  knownVars.set(name, { text: rhsText, tex: rhsTex, label: `${disp(name)}(${disp(param)})`, labelTex: `${dispTeX(name)}(${dispTeX(param)})` });
-  return { tex: `${dispTeX(name)}(${dispTeX(param)}) = ${rhsTex}`, text: `${disp(name)}(${disp(param)}) = ${rhsText}`, cls: 'sym' };
+  const paramsText = params.map(disp).join(', ');
+  const paramsTex = params.map(dispTeX).join(',\\ ');
+  knownVars.set(name, { text: rhsText, tex: rhsTex, label: `${disp(name)}(${paramsText})`, labelTex: `${dispTeX(name)}(${paramsTex})` });
+  return { tex: `${dispTeX(name)}(${paramsTex}) = ${rhsTex}`, text: `${disp(name)}(${paramsText}) = ${rhsText}`, cls: 'sym' };
 }
 
 function solveEquation(expr) {
@@ -1594,6 +1605,13 @@ function solveSystems(linesArr) {
     const latex = mq ? mq.latex() : '';
     if (!latex || !latex.trim()) return null;
     if (/\\frac\{d(\^\{?\d+\}?)?\}\{d/.test(latex) || /\\int/.test(latex) || /\\sum/.test(latex) || /\\prod/.test(latex) || /\\lim/.test(latex)) return null;
+    // A function definition — f(x,y) = ... — isn't a system equation relating
+    // x and y even though it has "=" and (with 2+ params) 2+ names in it;
+    // without this, defining two multi-param functions that happen to share
+    // parameter names (e.g. f(x,y)=..., g(x,y)=...) got treated as a genuine
+    // 2-equation/2-unknown system, "solving" x and y to spurious values that
+    // then leaked into the sidebar as if they were real global variables.
+    if (funcDefHead(line)) return null;
     let expr;
     try { nerdExact(); expr = latexToExpr(latex, complexMode); } catch { return null; }
     if (!expr || !expr.trim()) return null;
@@ -2894,6 +2912,8 @@ function niceError(msg = '') {
   if (bad) return `I don't recognize "${bad[1]}" — check the spelling or pick it from the keyboard below.`;
   if (/unexpected|cannot read prop|value expected|end of expression|parenthesis/i.test(m)) return 'That doesn’t look like valid math — check for typos, an empty exponent or root box, or a missing symbol.';
   if (/cannot evaluate/i.test(m)) return 'I couldn’t work that out — check your expression.';
+  const arity = m.match(/too (?:few|many) arguments in function (\w+)/i);
+  if (arity) return `${disp(arity[1])} was called with the wrong number of values — check how many you're passing in.`;
   if (/maximum call stack/i.test(m)) return 'That function calls itself — make sure its formula doesn’t use its own name.';
   return 'Something’s not right here — check your typing.';
 }
