@@ -234,6 +234,7 @@
     .kb-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; min-width:0; flex:1 1 200px; }
     .kb-grid .kb { width:100%; min-width:0; padding:9px 0; font-size:.95rem; }
     .kb-grid-num .kb.op { color:var(--gold); }
+    .kb-grid-misc .kb-pm { grid-column: 1 / -1; }
     .kb-side { display:flex; flex-direction:column; gap:6px; min-width:88px; }
     .kb-side .kb { flex:1; min-width:0; width:100%; font-size:.95rem; }
     .kb-side-nav { display:flex; gap:6px; }
@@ -384,6 +385,8 @@
           <button class="kb op" onclick="K.type('e')">e</button>
           <button class="kb var" onclick="K.cmd('\\theta')">θ</button>
           <button class="kb del" onclick="K.backspace()">⌫</button>
+
+          <button class="kb op kb-pm" onclick="K.cmd('\\pm')" title="Plus/minus — e.g. (-b±√disc)/(2a)">±</button>
         </div>
 
         <div class="kb-grid kb-grid-num">
@@ -541,7 +544,7 @@ function autoArrow(mq) {
 function makeMQConfig() {
   return {
     spaceBehavesLikeTab: true,
-    autoCommands: 'pi tau theta alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma phi chi psi omega sqrt sum prod int infty',
+    autoCommands: 'pi tau theta alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma phi chi psi omega sqrt sum prod int infty pm',
     autoOperatorNames: 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh ln log exp abs sign floor ceil round gcd lcm mod det factor expand simplify factorial lim',
     handlers: {
       edit: mq => { autoArrow(mq); onFocusField(mq); recordHistory(); scheduleEval(); },
@@ -1404,6 +1407,20 @@ const RESERVED_CONSTANTS = new Set(['pi', 'e', 'tau', 'phi', 'i', 'Infinity', 'N
 function assign(name, rhs) {
   if (RESERVED_CONSTANTS.has(name))
     return { text: `"${disp(name)}" is a reserved constant — pick a different variable name.`, cls: 'err' };
+  // "y = (-b±sqrt(disc))/(2a)" — two candidate values, same shape as a
+  // quadratic's two roots: shown in the sidebar via registerMultiValue, but
+  // (like those roots) not put in numScope, since there's no single value
+  // for other lines to substitute.
+  const pm = pmBranches(rhs);
+  if (pm) {
+    const [a, b] = pm.map(plainExpr);
+    if (!a || !b || a.cls === 'err' || b.cls === 'err' || a.text == null || b.text == null)
+      return { text: 'Both sides of the ± need to work out to plain values — try filling in the other variables first.', cls: 'err' };
+    if (a.text === b.text) return assign(name, pm[0]);   // branches collapse to one value
+    registerMultiValue(name, [{ text: a.text, tex: a.tex || a.text }, { text: b.text, tex: b.tex || b.text }]);
+    varNames.add(name);
+    return { parts: [a.tex || a.text, b.tex || b.text], text: `${a.text}   or   ${b.text}`, cls: 'num' };
+  }
   try {
     const val = math.evaluate(rhs, numScope);
     if (typeof val === 'number' && isFinite(val)) {
@@ -1477,6 +1494,15 @@ function defineFunction(name, param, rhs) {
 }
 
 function solveEquation(expr) {
+  // ± isn't a letter, so findUnknowns below silently ignores it rather than
+  // erroring — solving an equation that still has an unknown ON the other
+  // side of a ± (e.g. "y = x±5" with x still unsolved) isn't attempted here;
+  // that case is instead handled up in assign() by evaluating both branches.
+  // A genuine equation-with-unknowns containing ± would otherwise reach the
+  // polynomial/numeric solvers with a literal, un-evaluable "±" character
+  // baked into the expression string.
+  if (expr.includes('±'))
+    return { text: 'I can’t solve an equation that still has ± and an unknown together — try assigning it to a variable instead (e.g. "y = ...±...").', cls: 'err' };
   const eq = expr.match(/(?<![=<>])=(?!=)/);
   const lhs = expr.slice(0, eq.index).trim();
   const rhs = expr.slice(eq.index + 1).trim();
@@ -2089,7 +2115,28 @@ function tryDecimalCoeffForm(expr) {
   } catch { nerdExact(); return null; }
 }
 
+/* "±" (from \pm/\mp) splits an expression into two branches — the whole
+   string evaluated once with "+" and once with "-" in its place. Running
+   the FULL string through mathjs twice (rather than trying to algebraically
+   distribute the ± ourselves) means normal operator precedence, functions,
+   and grouping all just work, e.g. "(-b±sqrt(disc))/(2a)". Only the single
+   most common usage — one ± (or several, all varying together, as in a
+   repeated radical) — is supported; independent multi-± combinatorics
+   aren't attempted. */
+function pmBranches(expr) {
+  if (!expr.includes('±')) return null;
+  return [expr.replace(/±/g, '+'), expr.replace(/±/g, '-')];
+}
+
 function plainExpr(expr) {
+  const pm = pmBranches(expr);
+  if (pm) {
+    const [a, b] = pm.map(plainExpr);
+    if (!a || !b || a.cls === 'err' || b.cls === 'err' || a.text == null || b.text == null)
+      return { text: 'Both sides of the ± need to work out to plain values — try filling in the other variables first.', cls: 'err' };
+    if (a.text === b.text) return a;   // e.g. "5±0" — branches collapse to one value
+    return { parts: [a.tex || a.text, b.tex || b.text], text: `${a.text}   or   ${b.text}`, cls: 'num' };
+  }
   let mErr;
   try {
     const val = math.evaluate(preferRealOddRoot(expr), numScope);
@@ -2625,6 +2672,7 @@ function latexToExpr(tex, complex) {
       case 'cdot': case 'times': return '*';
       case 'div': return '/';
       case 'infty': return 'Infinity';
+      case 'pm': case 'mp': return '±';   // both produce a "one side or the other" split — see pmBranches
       case 'theta': case 'vartheta': return 'theta';
       case 'alpha': case 'beta': case 'gamma': case 'delta': case 'epsilon':
       case 'varepsilon': case 'zeta': case 'eta': case 'iota': case 'kappa':
@@ -2685,7 +2733,7 @@ function latexToExpr(tex, complex) {
       if (c === '%') { out += '/100'; i++; continue; }   // postfix percent: 50% → 50/100 (lastVal stays true)
       if (c === '+' || c === '-' || c === '/' || c === '=' || c === ',' || c === '*') { O(c); i++; continue; }
       if (c === ' ') { i++; continue; }
-      if (c === '\\') { const r = parseCommand(); if (r === '*' || r === '/') O(r); else V(r); continue; }
+      if (c === '\\') { const r = parseCommand(); if (r === '*' || r === '/' || r === '±') O(r); else V(r); continue; }
       O(c); i++;
     }
     return out;
