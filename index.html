@@ -313,6 +313,7 @@
     #toast.show { opacity:1; }
 
     @media (max-width:600px){ .lresult{ max-width:150px; } }
+    body.tab-logic .algebra-only { display: none; }
   </style>
 </head>
 <body>
@@ -329,11 +330,15 @@
     <p>Live math input · exact answers · multi-line</p>
   </div>
   <div class="header-right">
-    <div class="mode-toggle" title="Real mode: i is a variable, √(−1) is undefined. Complex mode: i is the imaginary unit.">
+    <div class="mode-toggle" id="tabToggle" title="Algebra: solve equations and compute expressions. Logic: evaluate propositional formulas to True/False.">
+      <button id="tabAlgebra" class="active" onclick="setTab('algebra')">∫ Algebra</button>
+      <button id="tabLogic" onclick="setTab('logic')">⊨ Logic</button>
+    </div>
+    <div class="mode-toggle algebra-only" title="Real mode: i is a variable, √(−1) is undefined. Complex mode: i is the imaginary unit.">
       <button id="modeReal" class="active" onclick="setComplex(false)">ℝ Real</button>
       <button id="modeComplex" onclick="setComplex(true)">ℂ Complex</button>
     </div>
-    <div class="mode-toggle" title="Exact: answers like √3 stay symbolic. Decimal: shown as 1.732050808 instead.">
+    <div class="mode-toggle algebra-only" title="Exact: answers like √3 stay symbolic. Decimal: shown as 1.732050808 instead.">
       <button id="modeExact" class="active" onclick="setDecimal(false)">√ Exact</button>
       <button id="modeDecimal" onclick="setDecimal(true)">≈ Decimal</button>
     </div>
@@ -341,7 +346,7 @@
   </div>
 </header>
 
-<div class="app-row">
+<div class="app-row" id="appRowAlgebra">
   <aside class="vars-panel" id="varsPanel">
     <h2>Variables</h2>
     <div class="vars-list" id="varsList">
@@ -455,6 +460,75 @@
         <button class="kb var" onclick="K.cmd('\\lambda')">λ</button>
         <button class="kb var" onclick="K.cmd('\\mu')">μ</button>
         <button class="kb var" onclick="K.cmd('\\omega')">ω</button>
+      </div>
+
+    </div>
+  </div>
+  </main>
+</div>
+
+<div class="app-row" id="appRowLogic" style="display:none">
+  <aside class="vars-panel" id="logicVarsPanel">
+    <h2>Propositions</h2>
+    <div class="vars-list" id="logicVarsList">
+      <div class="vars-empty">No propositions yet</div>
+    </div>
+  </aside>
+  <main>
+  <div class="calc-card">
+    <div class="calc-titlebar">
+      <span class="calc-fname">Logic Calculator</span>
+    </div>
+    <div class="lines" id="logicLines"></div>
+    <div class="status">
+      <span>Lines: <b id="logicLineCount">0</b></span>
+      <span><b>Enter</b> new line · <b>↑↓</b> navigate · assign with <b>A=True</b>, then write a formula to get True/False</span>
+    </div>
+  </div>
+
+  <!-- ── Logic keyboard ── -->
+  <div class="kb-wrap" id="logicKbWrap">
+    <div class="kb-hdr">
+      <span>⌨️ Logic keyboard</span>
+    </div>
+    <div class="kb-body" id="logicKbBody">
+
+      <div class="kb-section-label">Connectives</div>
+      <div class="kb-row">
+        <button class="kb op" onclick="LK.cmd('\\neg')" title="Negation (NOT)">¬</button>
+        <button class="kb op" onclick="LK.cmd('\\wedge')" title="Conjunction (AND)">∧</button>
+        <button class="kb op" onclick="LK.cmd('\\vee')" title="Disjunction (OR)">∨</button>
+        <button class="kb op" onclick="LK.cmd('\\oplus')" title="Exclusive or (XOR)">⊕</button>
+        <button class="kb op" onclick="LK.cmd('\\to')" title="Implies">→</button>
+        <button class="kb op" onclick="LK.cmd('\\leftrightarrow')" title="If and only if">↔</button>
+        <div class="kb-sep"></div>
+        <button class="kb op" onclick="LK.cmd('\\exists')" title="There exists">∃</button>
+        <button class="kb op" onclick="LK.cmd('\\forall')" title="For all">∀</button>
+      </div>
+
+      <div class="kb-section-label">Values &amp; comparisons</div>
+      <div class="kb-row">
+        <button class="kb special" onclick="LK.type('True')">True</button>
+        <button class="kb special" onclick="LK.type('False')">False</button>
+        <button class="kb op" onclick="LK.type('=')">=</button>
+        <button class="kb op" onclick="LK.cmd('\\neq')">≠</button>
+        <button class="kb op" onclick="LK.type('<')"><</button>
+        <button class="kb op" onclick="LK.type('>')">></button>
+        <button class="kb op" onclick="LK.cmd('\\le')">≤</button>
+        <button class="kb op" onclick="LK.cmd('\\ge')">≥</button>
+        <button class="kb op" onclick="LK.type('(')">(</button>
+        <button class="kb op" onclick="LK.type(')')">)</button>
+        <button class="kb del" onclick="LK.backspace()">⌫</button>
+      </div>
+
+      <div class="kb-section-label">Letters</div>
+      <div class="kb-row" id="logicLetters"></div>
+
+      <div class="kb-row" style="margin-top:6px">
+        <button class="kb" onclick="LK.left()">←</button>
+        <button class="kb" onclick="LK.right()">→</button>
+        <div class="kb-sep"></div>
+        <button class="kb enter" onclick="LK.enter()">⏎ Enter</button>
       </div>
 
     </div>
@@ -672,8 +746,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // real user steps — undo must never dismantle the starting three lines.
   sheetHistory = []; hIndex = -1;
   commitHistory();   // single baseline snapshot for the first undo to land on
-  const f = document.querySelector('.mq-field');
+  const f = document.querySelector('#lines .mq-field');
   if (f && f.__mq) f.__mq.focus();
+
+  buildLogicLetters();
+  for (let i = 0; i < 3; i++) addLogicLine('', false);
 });
 
 /* Drag a line's handle (⠿) to reorder — order matters for which line "owns"
@@ -803,13 +880,40 @@ function deleteLine(line) {
 }
 
 function clearAll() {
+  if (currentTab === 'logic') { clearLogicAll(); return; }
   commitHistory();          // make sure the pre-clear sheet is a step undo can return to
   restoringHistory = true;  // the teardown/rebuild in between is not undo-able states
   document.getElementById('lines').innerHTML = '';
   addLine('', false);
   restoringHistory = false;
   commitHistory();          // the fresh empty sheet is the new current step
-  setTimeout(() => document.querySelector('.mq-field').__mq.focus(), 0);
+  setTimeout(() => document.querySelector('#lines .mq-field').__mq.focus(), 0);
+}
+
+function clearLogicAll() {
+  document.getElementById('logicLines').innerHTML = '';
+  addLogicLine('', false);
+  setTimeout(() => { const f = document.querySelector('#logicLines .mq-field'); if (f) f.__mq.focus(); }, 0);
+}
+
+/* ============================================================
+   Tab switching (Algebra ↔ Logic) — two entirely separate sheets,
+   variable scopes, and keyboards; nothing is shared between them.
+============================================================ */
+let currentTab = 'algebra';
+function setTab(tab) {
+  if (tab === currentTab) return;
+  currentTab = tab;
+  document.body.classList.toggle('tab-logic', tab === 'logic');
+  document.getElementById('tabAlgebra').classList.toggle('active', tab === 'algebra');
+  document.getElementById('tabLogic').classList.toggle('active', tab === 'logic');
+  document.getElementById('appRowAlgebra').style.display = tab === 'algebra' ? '' : 'none';
+  document.getElementById('appRowLogic').style.display = tab === 'logic' ? '' : 'none';
+  document.getElementById('kbWrap').style.display = tab === 'algebra' ? '' : 'none';
+  document.getElementById('logicKbWrap').style.display = tab === 'logic' ? '' : 'none';
+  const lines = tab === 'algebra' ? allLines() : allLogicLines();
+  const first = lines[0];
+  if (first && first._mq) setTimeout(() => first._mq.focus(), 0);
 }
 
 /* ── inter-field navigation ──
@@ -3306,11 +3410,416 @@ function updateStatus() { document.getElementById('lineCount').textContent = all
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePalette(); });
 
 window.addEventListener('beforeunload', e => {
-  const hasContent = allLines().some(l => l._mq && l._mq.latex().trim() !== '');
+  const hasContent = allLines().some(l => l._mq && l._mq.latex().trim() !== '')
+    || allLogicLines().some(l => l._mq && l._mq.latex().trim() !== '');
   if (!hasContent) return;
   e.preventDefault();
   e.returnValue = 'If you leave this page your changes will be lost.';
 });
+
+/* ============================================================
+   LOGIC TAB
+   A second, fully independent sheet: its own lines, its own truth-value
+   scope, its own keyboard. Nothing here reads or writes the Algebra tab's
+   numScope/knownVars — "A" in Logic and "A" in Algebra (if it existed there)
+   are unrelated. Logic mode only ever answers True/False: no arithmetic
+   results, no remembered numeric variables.
+============================================================ */
+let logicActiveMQ = null, logicActiveLine = null;
+let logicScope = new Map();          // key (var name, or a quantified expression's canonical text) -> boolean
+let logicKnownDisplay = new Map();   // key -> {display, value} for the sidebar
+
+function makeLogicMQConfig() {
+  return {
+    spaceBehavesLikeTab: true,
+    autoCommands: 'neg wedge vee oplus to leftrightarrow exists forall le ge neq',
+    handlers: {
+      edit: mq => { autoArrow(mq); onFocusLogicField(mq); scheduleLogicEval(); },
+      enter: mq => enterFromLogic(mq),
+      upOutOf: mq => moveVertLogic(mq, -1),
+      downOutOf: mq => moveVertLogic(mq, +1),
+      deleteOutOf: (dir, mq) => { if (dir === MQ.L) backspaceEmptyLogic(mq); },
+    },
+  };
+}
+
+const LK = {
+  ensure() { if (!logicActiveMQ) { const f = document.querySelector('#logicLines .mq-field'); if (f) logicActiveMQ = f.__mq; } return logicActiveMQ; },
+  type(t)  { const mq = this.ensure(); if (mq) { mq.typedText(t); mq.focus(); scheduleLogicEval(); } },
+  cmd(c)   { const mq = this.ensure(); if (mq) { mq.cmd(c); mq.focus(); scheduleLogicEval(); } },
+  backspace() { const mq = this.ensure(); if (mq) { mq.keystroke('Backspace'); mq.focus(); scheduleLogicEval(); } },
+  left()  { const mq = this.ensure(); if (mq) { mq.keystroke('Left'); mq.focus(); } },
+  right() { const mq = this.ensure(); if (mq) { mq.keystroke('Right'); mq.focus(); } },
+  enter() { const mq = this.ensure(); if (mq) { mq.typedText('\n'); } },
+};
+
+function buildLogicLetters() {
+  const host = document.getElementById('logicLetters');
+  if (!host) return;
+  let html = '';
+  for (const ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') html += `<button class="kb var" onclick="LK.type('${ch}')">${ch}</button>`;
+  host.innerHTML = html;
+}
+
+/* ── Logic line management (parallels addLine/allLines/renumber/deleteLine —
+   deliberately simpler: no drag-reorder, no undo/redo, since order never
+   changes which line "owns" anything the way it can in Algebra) ── */
+function allLogicLines() { return [...document.querySelectorAll('#logicLines .line')]; }
+function renumberLogic() { allLogicLines().forEach((l, i) => l.querySelector('.lnum').textContent = i + 1); }
+function updateLogicStatus() { const el = document.getElementById('logicLineCount'); if (el) el.textContent = allLogicLines().length; }
+
+function addLogicLine(latex = '', focus = true) {
+  const container = document.getElementById('logicLines');
+  if (!container) return null;
+  const oldAdd = container.querySelector('.add-line');
+  if (oldAdd) oldAdd.remove();
+
+  const div = document.createElement('div');
+  div.className = 'line';
+  div.innerHTML = `
+    <span class="lnum">?</span>
+    <span class="mq-field"></span>
+    <span class="larrow"></span>
+    <div class="lresult"></div>
+    <button class="ldel" tabindex="-1" title="Remove">✕</button>`;
+  container.appendChild(div);
+
+  const addBtn = document.createElement('button');
+  addBtn.className = 'add-line';
+  addBtn.innerHTML = '＋ &nbsp;Add line';
+  addBtn.onclick = () => addLogicLine();
+  container.appendChild(addBtn);
+
+  const fieldEl = div.querySelector('.mq-field');
+  const mq = MQ.MathField(fieldEl, makeLogicMQConfig());
+  fieldEl.__mq = mq;
+  div._mq = mq;
+  if (latex) mq.latex(latex);
+
+  fieldEl.addEventListener('focusin', () => onFocusLogicField(mq));
+  fieldEl.addEventListener('mousedown', () => onFocusLogicField(mq));
+  div.querySelector('.ldel').addEventListener('click', () => deleteLogicLine(div));
+
+  renumberLogic(); evaluateLogicAll(); updateLogicStatus();
+  if (focus) setTimeout(() => mq.focus(), 0);
+  return div;
+}
+
+function onFocusLogicField(mq) { logicActiveMQ = mq; logicActiveLine = mq.el().closest('.line'); }
+
+function deleteLogicLine(line) {
+  const lines = allLogicLines();
+  if (lines.length <= 1) { line._mq.latex(''); evaluateLogicAll(); return; }
+  const idx = lines.indexOf(line);
+  const prev = lines[Math.max(0, idx - 1)];
+  line.remove();
+  renumberLogic(); evaluateLogicAll(); updateLogicStatus();
+  prev._mq.focus();
+}
+
+function enterFromLogic(mq) {
+  const lines = allLogicLines();
+  const idx = lines.indexOf(logicActiveLine);
+  if (idx === -1 || idx === lines.length - 1) addLogicLine();
+  else lines[idx + 1]._mq.focus();
+}
+function moveVertLogic(mq, dir) {
+  const lines = allLogicLines();
+  const idx = lines.indexOf(logicActiveLine);
+  const t = idx + dir;
+  if (idx !== -1 && t >= 0 && t < lines.length) lines[t]._mq.focus();
+  else if (dir > 0) addLogicLine();
+}
+function backspaceEmptyLogic(mq) {
+  const lines = allLogicLines();
+  if (lines.length <= 1) return;
+  const idx = lines.indexOf(logicActiveLine);
+  if (idx !== -1 && mq.latex().trim() === '') deleteLogicLine(lines[idx]);
+}
+
+let logicEvalTimer = null;
+function scheduleLogicEval() { clearTimeout(logicEvalTimer); logicEvalTimer = setTimeout(evaluateLogicAll, 90); }
+
+/* ── Tokenizer ──
+   Pre-normalizes every backslash connective/relation command to a single
+   unicode character up front, so the rest of the scanner only ever deals
+   with single characters — no variable-length backslash matching mid-scan. */
+function logicNormalizeLatex(latex) {
+  return String(latex)
+    // Connectives/relations FIRST — \leftrightarrow starts with the literal
+    // substring "\left", so stripping \left before converting it would mangle
+    // it into a bare "rightarrow" with no backslash, and the \leftrightarrow
+    // conversion below would never get a chance to match it.
+    .replace(/\\leq\b|\\le\b/g, '≤')
+    .replace(/\\geq\b|\\ge\b/g, '≥')
+    .replace(/\\neq\b|\\ne\b/g, '≠')
+    .replace(/\\neg\b|\\lnot\b/g, '¬')
+    .replace(/\\wedge\b|\\land\b/g, '∧')
+    .replace(/\\vee\b|\\lor\b/g, '∨')
+    .replace(/\\oplus\b/g, '⊕')
+    .replace(/\\leftrightarrow\b|\\iff\b/g, '↔')
+    .replace(/\\to\b|\\rightarrow\b|\\implies\b/g, '→')
+    .replace(/\\exists\b/g, '∃')
+    .replace(/\\forall\b/g, '∀')
+    .replace(/\\left/g, '').replace(/\\right/g, '')
+    .replace(/\\,/g, ' ').replace(/\\!/g, '').replace(/\\;/g, ' ').replace(/\\ /g, ' ');
+}
+
+/* A relational comparison ("5=5", the "x>5" inside a quantifier body, ...) is
+   scanned as a maximal run of arithmetic-safe characters (letters, digits,
+   + - * / ^ . and balanced parens/braces) containing a top-level relational
+   operator — the two sides are handed to the SAME latexToExpr+math.evaluate
+   pipeline the Algebra tab uses, with an empty scope (Logic never sees
+   Algebra's remembered variables). Quantified expressions (∃x(...), ∀x(...))
+   are captured whole as an opaque atom: this calculator doesn't attempt real
+   quantifier evaluation over a domain, it just looks up whatever truth value
+   was explicitly given for that exact expression via an assignment line. */
+function logicTokenize(rawLatex) {
+  const s = logicNormalizeLatex(rawLatex);
+  const tokens = [];
+  let i = 0;
+  const skipSpace = () => { while (s[i] === ' ') i++; };
+  const ARITH_CHAR = /[a-zA-Z0-9.+\-*^ ]/;
+
+  function readParenSpan() {   // assumes s[i] === '(' — returns text INCLUDING the outer parens
+    let depth = 0, start = i;
+    while (i < s.length) {
+      if (s[i] === '(') depth++;
+      else if (s[i] === ')') { depth--; if (depth === 0) { i++; break; } }
+      i++;
+    }
+    return s.slice(start, i);
+  }
+
+  function readQuantifier(sym) {
+    skipSpace();
+    let boundVar = '';
+    if (/[a-zA-Z]/.test(s[i] || '')) boundVar = s[i++];
+    skipSpace();
+    const body = s[i] === '(' ? readParenSpan() : '';
+    const display = `${sym}${boundVar}${body}`;
+    return { t: 'QUANT', key: display.replace(/\s+/g, ''), display };
+  }
+
+  function tryReadOperand(from) {
+    let depth = 0, p = from;
+    while (p < s.length) {
+      const c = s[p];
+      if (c === '(' || c === '{') { depth++; p++; continue; }
+      if (c === ')' || c === '}') { if (depth === 0) break; depth--; p++; continue; }
+      if (depth === 0 && !ARITH_CHAR.test(c)) break;
+      p++;
+    }
+    return p;
+  }
+
+  function readRelOpAt(p) {
+    if (s[p] === '≤') return { op: '<=', len: 1 };
+    if (s[p] === '≥') return { op: '>=', len: 1 };
+    if (s[p] === '≠') return { op: '!=', len: 1 };
+    if (s[p] === '<' && s[p + 1] === '=') return { op: '<=', len: 2 };
+    if (s[p] === '>' && s[p + 1] === '=') return { op: '>=', len: 2 };
+    if (s[p] === '=') return { op: '=', len: 1 };
+    if (s[p] === '<') return { op: '<', len: 1 };
+    if (s[p] === '>') return { op: '>', len: 1 };
+    return null;
+  }
+
+  function tryReadComparison() {
+    const leftEnd = tryReadOperand(i);
+    const rel = readRelOpAt(leftEnd);
+    if (!rel) return null;
+    const rightStart = leftEnd + rel.len;
+    const rightEnd = tryReadOperand(rightStart);
+    const left = s.slice(i, leftEnd).trim();
+    const right = s.slice(rightStart, rightEnd).trim();
+    if (!left || !right) return null;
+    i = rightEnd;
+    return { t: 'CMP', left, op: rel.op, right };
+  }
+
+  while (i < s.length) {
+    skipSpace();
+    if (i >= s.length) break;
+    const c = s[i];
+    if (c === '(') { tokens.push({ t: 'LPAREN' }); i++; continue; }
+    if (c === ')') { tokens.push({ t: 'RPAREN' }); i++; continue; }
+    if (c === '¬') { tokens.push({ t: 'NOT' }); i++; continue; }
+    if (c === '∧') { tokens.push({ t: 'AND' }); i++; continue; }
+    if (c === '∨') { tokens.push({ t: 'OR' }); i++; continue; }
+    if (c === '⊕') { tokens.push({ t: 'XOR' }); i++; continue; }
+    if (c === '→') { tokens.push({ t: 'IMPLIES' }); i++; continue; }
+    if (c === '↔') { tokens.push({ t: 'IFF' }); i++; continue; }
+    if (c === '∃') { i++; tokens.push(readQuantifier('∃')); continue; }
+    if (c === '∀') { i++; tokens.push(readQuantifier('∀')); continue; }
+    if (/[a-zA-Z0-9]/.test(c)) {
+      const cmp = tryReadComparison();
+      if (cmp) { tokens.push(cmp); continue; }
+      let name = s[i++];
+      while (i < s.length && /[a-zA-Z0-9]/.test(s[i])) name += s[i++];
+      if (/^true$/i.test(name)) { tokens.push({ t: 'LIT', value: true }); continue; }
+      if (/^false$/i.test(name)) { tokens.push({ t: 'LIT', value: false }); continue; }
+      if (/^\d+(\.\d+)?$/.test(name)) throw new Error(`"${name}" is just a number — Logic mode needs a True/False statement, like ${name}=${name}, or a comparison such as x>5.`);
+      tokens.push({ t: 'IDENT', name });
+      continue;
+    }
+    throw new Error(`I don't know what to do with "${c}" here — Logic mode evaluates True/False statements (comparisons, and connectives like ∧ ∨ ¬ → ↔), not plain arithmetic.`);
+  }
+  return tokens;
+}
+
+/* ── Parser: recursive descent, precedence highest→lowest: ¬ > ∧ > ∨ > ⊕ >
+   → (right-assoc) > ↔ — the conventional propositional-logic precedence. ── */
+function logicParseTokens(tokens) {
+  let pos = 0;
+  const peek = () => tokens[pos];
+  const advance = () => tokens[pos++];
+  function expect(t) {
+    if (!peek() || peek().t !== t) throw new Error(peek() ? `Expected a "${t === 'RPAREN' ? ')' : t}" here.` : 'The formula ends too soon — check for a missing ")" or operand.');
+    return advance();
+  }
+  function parseAtom() {
+    const tok = peek();
+    if (!tok) throw new Error('Expected a value or sub-expression.');
+    if (tok.t === 'NOT') { advance(); return { op: 'not', a: parseAtom() }; }
+    if (tok.t === 'LPAREN') { advance(); const inner = parseIff(); expect('RPAREN'); return inner; }
+    if (tok.t === 'LIT') { advance(); return { op: 'lit', value: tok.value }; }
+    if (tok.t === 'QUANT') { advance(); return { op: 'quant', key: tok.key, display: tok.display }; }
+    if (tok.t === 'CMP') { advance(); return { op: 'cmp', left: tok.left, cmp: tok.op, right: tok.right }; }
+    if (tok.t === 'IDENT') { advance(); return { op: 'var', name: tok.name }; }
+    throw new Error('Unexpected symbol in the formula.');
+  }
+  function parseAnd() { let n = parseAtom(); while (peek() && peek().t === 'AND') { advance(); n = { op: 'and', a: n, b: parseAtom() }; } return n; }
+  function parseOr()  { let n = parseAnd(); while (peek() && peek().t === 'OR')  { advance(); n = { op: 'or',  a: n, b: parseAnd() }; } return n; }
+  function parseXor() { let n = parseOr();  while (peek() && peek().t === 'XOR') { advance(); n = { op: 'xor', a: n, b: parseOr() }; } return n; }
+  function parseImplies() {
+    const n = parseXor();
+    if (peek() && peek().t === 'IMPLIES') { advance(); return { op: 'implies', a: n, b: parseImplies() }; }
+    return n;
+  }
+  function parseIff() { let n = parseImplies(); while (peek() && peek().t === 'IFF') { advance(); n = { op: 'iff', a: n, b: parseImplies() }; } return n; }
+
+  const result = parseIff();
+  if (pos < tokens.length) throw new Error('There’s extra content after a complete formula — check for a missing connective or an extra symbol.');
+  return result;
+}
+
+/* ── Evaluator ── */
+function logicEvalNode(node, scope) {
+  switch (node.op) {
+    case 'lit': return node.value;
+    case 'not': return !logicEvalNode(node.a, scope);
+    case 'and': return logicEvalNode(node.a, scope) && logicEvalNode(node.b, scope);
+    case 'or': return logicEvalNode(node.a, scope) || logicEvalNode(node.b, scope);
+    case 'xor': return logicEvalNode(node.a, scope) !== logicEvalNode(node.b, scope);
+    case 'implies': return !logicEvalNode(node.a, scope) || logicEvalNode(node.b, scope);
+    case 'iff': return logicEvalNode(node.a, scope) === logicEvalNode(node.b, scope);
+    case 'var':
+      if (!scope.has(node.name)) throw new Error(`"${node.name}" has no truth value yet — add a line like "${node.name}=True" first.`);
+      return scope.get(node.name);
+    case 'quant':
+      if (!scope.has(node.key)) throw new Error(`"${node.display}" has no given truth value — add a line like "${node.display}=True" first.`);
+      return scope.get(node.key);
+    case 'cmp': {
+      let l, r;
+      try { l = math.evaluate(latexToExpr(node.left, false), {}); } catch { throw new Error(`Couldn't work out "${node.left}".`); }
+      try { r = math.evaluate(latexToExpr(node.right, false), {}); } catch { throw new Error(`Couldn't work out "${node.right}".`); }
+      if (typeof l !== 'number' || typeof r !== 'number') throw new Error('Comparisons need plain numbers on both sides.');
+      switch (node.cmp) {
+        case '=': return Math.abs(l - r) < 1e-9;
+        case '!=': return Math.abs(l - r) >= 1e-9;
+        case '<': return l < r;
+        case '>': return l > r;
+        case '<=': return l <= r;
+        case '>=': return l >= r;
+      }
+      return false;
+    }
+    default: throw new Error('Unrecognized formula.');
+  }
+}
+
+/* ── Line-level dispatch: "A=True" / "∃x(x>5)=True" assignments, else a
+   formula line to evaluate to True/False. Checked BEFORE the general
+   tokenizer, since the "=True/False" suffix is an assignment-line
+   convention, not part of formula grammar. ── */
+function logicLineAssignment(latex) {
+  const norm = logicNormalizeLatex(latex).trim();
+  let m = norm.match(/^([a-zA-Z][a-zA-Z0-9]*)\s*=\s*(True|False|T|F)$/i);
+  if (m) return { key: m[1], value: /^(true|t)$/i.test(m[2]), display: m[1] };
+  m = norm.match(/^([∃∀]\s*[a-zA-Z]\s*\(.*\))\s*=\s*(True|False|T|F)$/i);
+  if (m) { const d = m[1].replace(/\s+/g, ''); return { key: d, value: /^(true|t)$/i.test(m[2]), display: d }; }
+  return null;
+}
+
+function evalLogicLine(latex) {
+  const asg = logicLineAssignment(latex);
+  if (asg) {
+    logicScope.set(asg.key, asg.value);
+    logicKnownDisplay.set(asg.key, { display: asg.display, value: asg.value });
+    return { text: `${asg.display} = ${asg.value ? 'True' : 'False'}`, cls: asg.value ? 'ok' : null };
+  }
+  const tokens = logicTokenize(latex);
+  if (!tokens.length) return null;
+  const ast = logicParseTokens(tokens);
+  const value = logicEvalNode(ast, logicScope);
+  return { text: value ? '✓  True' : '✗  False', cls: value ? 'ok' : null };
+}
+
+function evaluateLogicAll() {
+  logicScope = new Map();
+  logicKnownDisplay = new Map();
+  const linesArr = allLogicLines();
+
+  const PASSES = 3;
+  for (let pass = 0; pass < PASSES; pass++) {
+    linesArr.forEach(line => {
+      const mq = line._mq;
+      const latex = mq ? mq.latex() : '';
+      const arrow = line.querySelector('.larrow');
+      const result = line.querySelector('.lresult');
+      line.classList.remove('is-error', 'is-result');
+      arrow.textContent = ''; result.textContent = ''; result.className = 'lresult';
+      if (!latex || !latex.trim()) return;
+
+      try {
+        const out = evalLogicLine(latex);
+        if (out && out.text != null) {
+          arrow.textContent = '→';
+          if (out.cls) result.classList.add(out.cls);
+          line.classList.add(out.cls === 'err' ? 'is-error' : 'is-result');
+          result.textContent = out.text;
+        }
+      } catch (err) {
+        arrow.textContent = '→';
+        result.textContent = err.message || 'Something isn’t right here — check your formula.';
+        result.classList.add('err');
+        line.classList.add('is-error');
+      }
+    });
+  }
+  renderLogicVarsPanel();
+}
+
+function renderLogicVarsPanel() {
+  const list = document.getElementById('logicVarsList');
+  if (!list) return;
+  const entries = [...logicKnownDisplay.entries()];
+  if (!entries.length) { list.innerHTML = '<div class="vars-empty">No propositions yet</div>'; return; }
+  list.innerHTML = '';
+  entries.forEach(([, info]) => {
+    const row = document.createElement('div');
+    row.className = 'var-item';
+    const nameEl = document.createElement('span');
+    nameEl.className = 'var-name';
+    nameEl.textContent = info.display;
+    const valEl = document.createElement('span');
+    valEl.className = 'var-val';
+    valEl.textContent = info.value ? 'True' : 'False';
+    row.append(nameEl, valEl);
+    list.appendChild(row);
+  });
+}
 </script>
 </body>
 </html>
