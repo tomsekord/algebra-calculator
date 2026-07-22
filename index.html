@@ -234,7 +234,7 @@
     .kb-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; min-width:0; flex:1 1 200px; }
     .kb-grid .kb { width:100%; min-width:0; padding:9px 0; font-size:.95rem; }
     .kb-grid-num .kb.op { color:var(--gold); }
-    .kb-grid-misc .kb-pm { grid-column: 1 / -1; }
+    .kb-grid-misc .kb-half { grid-column: span 2; }
     .kb-side { display:flex; flex-direction:column; gap:6px; min-width:88px; }
     .kb-side .kb { flex:1; min-width:0; width:100%; font-size:.95rem; }
     .kb-side-nav { display:flex; gap:6px; }
@@ -386,7 +386,8 @@
           <button class="kb var" onclick="K.cmd('\\theta')">θ</button>
           <button class="kb del" onclick="K.backspace()">⌫</button>
 
-          <button class="kb op kb-pm" onclick="K.cmd('\\pm')" title="Plus/minus — e.g. (-b±√disc)/(2a)">±</button>
+          <button class="kb op kb-half" onclick="K.cmd('\\pm')" title="Plus/minus — e.g. (-b±√disc)/(2a)">±</button>
+          <button class="kb op kb-half" onclick="K.cmd('\\infty')" title="Infinity — e.g. for limits as x→∞">∞</button>
         </div>
 
         <div class="kb-grid kb-grid-num">
@@ -431,6 +432,19 @@
         <button class="kb fn" onclick="K.type('factorial(')">n!</button>
         <div class="kb-sep"></div>
         <button class="kb special" onclick="openPalette()">∑ &nbsp;More functions…</button>
+      </div>
+
+      <div class="kb-section-label">Number theory</div>
+      <div class="kb-row">
+        <button class="kb fn" onclick="K.fn('gcd')" title="Greatest common divisor">gcd</button>
+        <button class="kb fn" onclick="K.fn('lcm')" title="Least common multiple">lcm</button>
+        <button class="kb fn" onclick="K.fn('mod')" title="Modulo">mod</button>
+        <button class="kb fn" onclick="K.fn('ceil')" title="Round up">ceil</button>
+        <button class="kb fn" onclick="K.fn('floor')" title="Round down">floor</button>
+        <button class="kb fn" onclick="K.fn('round')" title="Round to nearest">round</button>
+        <button class="kb fn" onclick="K.fn('sign')" title="Sign (-1, 0, or 1)">sign</button>
+        <button class="kb fn" onclick="K.fn('nPr')" title="Permutations: n things taken r at a time">nPr</button>
+        <button class="kb fn" onclick="K.fn('nCr')" title="Combinations: n choose r">nCr</button>
       </div>
 
       <div class="kb-section-label">Letters &amp; symbols</div>
@@ -545,7 +559,7 @@ function makeMQConfig() {
   return {
     spaceBehavesLikeTab: true,
     autoCommands: 'pi tau theta alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma phi chi psi omega sqrt sum prod int infty pm',
-    autoOperatorNames: 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh ln log exp abs sign floor ceil round gcd lcm mod det factor expand simplify factorial lim',
+    autoOperatorNames: 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh ln log exp abs sign floor ceil round gcd lcm mod det factor expand simplify factorial lim nCr nPr taylor',
     handlers: {
       edit: mq => { autoArrow(mq); onFocusField(mq); recordHistory(); scheduleEval(); },
       enter: mq => enterFrom(mq),
@@ -624,6 +638,17 @@ document.addEventListener('keydown', e => {
   const k = (e.key || '').toLowerCase();
   if (k === 'z' && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); undoSheet(); }
   else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); e.stopPropagation(); redoSheet(); }
+}, true);
+
+/* MathQuill's default "$" binding opens an internal text-mode block; typing it
+   (even by accident) leaves the field in a broken half-text state that throws on
+   the next edit. There's no legitimate use for a literal "$" in this calculator's
+   math, so just swallow the keystroke before MathQuill's own key handling ever
+   sees it — same capture-phase trick as the undo/redo shortcut above. */
+document.addEventListener('keydown', e => {
+  if (e.key === '$' && e.target.closest && e.target.closest('.mq-field')) {
+    e.preventDefault(); e.stopPropagation();
+  }
 }, true);
 
 /* ============================================================
@@ -1562,6 +1587,8 @@ function solveEquation(expr) {
     if (abs) return abs;
     const trig = trySimpleTrigInverse(lhs, rhs, v);      // sin(y)=1 → one principal answer, not many
     if (trig) return trig;
+    const expInv = trySimpleExpInverse(lhs, rhs, v);     // e^x=10 → x=ln(10), exact — not a decimal
+    if (expInv) return expInv;
     return numericSolve(lhs, rhs, v);                    // non-polynomial → numeric
   }
 
@@ -1788,7 +1815,12 @@ function formatSystemDisplay(deduped) {
 function polyCoeffs(poly, v) {
   let raw;
   freeVar(v);
-  try { raw = splitList(nerdamer.coeffs(poly, v).toString()); } catch { return null; }
+  // nerdamer.coeffs() can flip Settings.PARSE2NUMBER on internally even when it
+  // ends up throwing (same quirk worked around elsewhere after nerdamer.solve) —
+  // reset it before returning, or every solver downstream of this failed attempt
+  // (trig/exp inverses, numeric fallback) would silently start evaluating to
+  // decimals instead of staying symbolic.
+  try { raw = splitList(nerdamer.coeffs(poly, v).toString()); } catch { nerdExact(); return null; }
   if (!raw.length) return null;
   const c = [];
   for (const cr of raw) {
@@ -2181,7 +2213,10 @@ function plainExpr(expr) {
       if (typeof val === 'number' && !isFinite(val)) {
         if (Number.isNaN(val) || expr.includes('/')) return { text: 'That’s undefined — probably dividing by zero.', cls: 'err' };
         if (/\blog\(/.test(expr)) return { text: 'That’s undefined — log of 0 has no value (it dives toward −∞).', cls: 'err' };
-        return { text: 'That number is too big for me to calculate exactly.', cls: 'err' };
+        // A genuinely unbounded result (∞+1, ∞*2, ∞ on its own) — this is a real
+        // mathematical answer, not a calculator limitation, so it shouldn't be
+        // phrased like an error the user needs to fix.
+        return { text: val > 0 ? 'That’s infinite (+∞) — it grows without bound.' : 'That’s infinite (−∞) — it grows without bound.', cls: null };
       }
       return { text: fmtMath(val), cls: null };
     }
@@ -2194,8 +2229,12 @@ function plainExpr(expr) {
   try {
     const s = nerdamer(expr); const str = s.toString();
     const dstr = disp(str);
-    // A lone variable (e.g. `i` or `x` on its own) has nothing to compute → show nothing
-    if (/^[a-zA-Z]\w*$/.test(dstr)) return { text: null };
+    // A lone variable typed directly (e.g. `i` or `x` on its own) has nothing to
+    // compute → show nothing. But if a more complex expression SIMPLIFIED down to
+    // a lone variable (e.g. "ln(e^x)" -> "x"), that's a real result worth showing —
+    // compare against the (disp'd, for a fair comparison) ORIGINAL input, not just
+    // the shape of the simplified output.
+    if (/^[a-zA-Z]\w*$/.test(dstr) && disp(stripOuter(expr).trim()) === dstr) return { text: null };
     // The variables cancelled out and left a plain number (e.g. x^0, x/x) → color it like a number
     if (/^-?\d+(\.\d+)?$/.test(dstr)) return { tex: dstr, text: dstr, cls: 'num' };
     if (str) {
@@ -2493,6 +2532,29 @@ function trySimpleTrigInverse(lhs, rhs, v) {
   return { text: null };
 }
 
+/* e^x=10, 2^x=8, 10^x=1000, etc. — an exact symbolic answer x = ln(c)/ln(base) (or
+   just ln(c) when the base is e) instead of falling through to Newton's decimal
+   approximation. Only the bare "base^v" shape is handled (not e.g. base^(2v+1)),
+   same restriction as trySimpleTrigInverse below. */
+function trySimpleExpInverse(lhs, rhs, v) {
+  const L = stripOuter(lhs), R = stripOuter(rhs);
+  const pat = /^(e|\d+(?:\.\d+)?)\^(.+)$/;
+  let m = L.match(pat), constSide = R;
+  if (!m) { m = R.match(pat); constSide = L; }
+  if (!m) return null;
+  const base = m[1];
+  if (stripOuter(m[2]) !== v) return null;   // only bare base^v, not base^(2v)
+  if (Number(base) === 1) return null;       // 1^x is never invertible
+
+  let c;
+  try { c = math.evaluate(constSide, numScope); } catch { return null; }
+  if (typeof c !== 'number' || !isFinite(c) || c <= 0) return null;   // no real solution — let the usual fallback say so
+
+  const valueExpr = base === 'e' ? `log(${c})` : `log(${c})/log(${base})`;
+  registerKnownValue(v, valueExpr);
+  return { text: null };
+}
+
 /* One equation, several unknowns: instead of refusing, isolate one variable
    in terms of the others (x+y+z=6 → x = 6−y−z; x²+y²=1 → x = ±√(1−y²)).
    Prefers x, then tries the unknowns in order of appearance until nerdamer
@@ -2704,6 +2766,9 @@ function latexToExpr(tex, complex) {
       case 'gcd': case 'lcm': case 'mod': case 'det': case 'factorial':
       case 'factor': case 'expand': case 'simplify':
         return name + parseArg();
+      case 'nCr': return 'combinations' + parseArg();
+      case 'nPr': return 'permutations' + parseArg();
+      case 'taylor': return 'taylor' + parseArg();
       default: return name;
     }
   }
@@ -2728,7 +2793,11 @@ function latexToExpr(tex, complex) {
         if (s[i] === '_') {
           const save = i; i++;
           const sub = stripOuter(parseArg()).replace(/[^a-zA-Z0-9]/g, '');
-          if (sub) name += sub; else i = save;
+          // Numeric subscripts fold directly (x_1 -> x1, matching the existing x1/f1
+          // convention); letter subscripts keep an underscore separator instead, so a
+          // subscripted name can never collide with a reserved word spelled out by
+          // plain concatenation (p_i -> "p_i", not "pi"; a_n -> "a_n", not "an").
+          if (sub) name += /^\d+$/.test(sub) ? sub : ('_' + sub); else i = save;
         }
         // f'(x) → the pre-computed derivative function (defineFunction sets up
         // fPRIME1/fPRIME2 alongside f; disp() turns PRIMEn back into quotes).
@@ -2778,6 +2847,7 @@ const BUILTINS = new Set([
   'sinh','cosh','tanh','sqrt','cbrt','exp','log','log2','log10','ln',
   'abs','ceil','floor','round','sign','factorial','gamma','nthRoot',
   'min','max','sum','mean','mod','pow','gcd','lcm','det','re','im','arg','conj',
+  'combinations','permutations','taylor',
   'pi','e','tau','phi','Infinity','NaN','true','false',
   'factor','expand','simplify','integrate','derivative','diff','C',
 ]);
@@ -2841,6 +2911,14 @@ const GREEK_NAMES = new Set(['alpha','beta','gamma','delta','epsilon','varepsilo
 function dispTeX(name) {
   const d = disp(name);
   if (GREEK_NAMES.has(d)) return '\\' + d + ' ';
+  // Letter subscripts (p_i, a_n, theta_n → p_i, a_n, θ_n) keep their underscore
+  // separator internally (see parseSeq) — render it as a proper TeX subscript.
+  const subU = d.match(/^([a-zA-Z]+)_([a-zA-Z]\w*)$/);
+  if (subU) {
+    const base = GREEK_NAMES.has(subU[1]) ? '\\' + subU[1] + ' ' : subU[1];
+    const subscript = GREEK_NAMES.has(subU[2]) ? '\\' + subU[2] : subU[2];
+    return `${base}_{${subscript}}`;
+  }
   const sub = d.match(/^([a-zA-Z]+?)(\d+)$/);   // x1 → x₁, theta1 → θ₁
   if (sub) {
     if (GREEK_NAMES.has(sub[1])) return `\\${sub[1]}_{${sub[2]}}`;
@@ -2849,12 +2927,52 @@ function dispTeX(name) {
   return d;
 }
 
+/* phi^n (golden ratio) -> reduce via the Fibonacci identity phi^n = F(n)*phi + F(n-1)
+   (phi^2 -> phi+1, phi^3 -> 2phi+1, ...). nerdamer treats "phi" as an opaque symbol
+   and never applies this on its own. Folding it in disp() is safe even though disp()
+   output sometimes gets re-parsed elsewhere (e.g. tryExactForm's verification step) —
+   the folded form is numerically identical, just a like-for-like substitution. */
+function foldPhiPowers(s) {
+  const fib = n => { let a = 0, b = 1; for (let k = 0; k < n; k++) [a, b] = [b, a + b]; return a; };   // F(n)
+  s = s.replace(/\bphi\^(\d+)\b/g, (m, nStr) => {
+    const n = parseInt(nStr, 10);
+    if (n < 2) return m;
+    const a = fib(n), b = fib(n - 1);
+    return `(${a === 1 ? 'phi' : `${a}*phi`}+${b})`;
+  });
+  s = s.replace(/\\phi\^\{(\d+)\}/g, (m, nStr) => {
+    const n = parseInt(nStr, 10);
+    if (n < 2) return m;
+    const a = fib(n), b = fib(n - 1);
+    return `(${a === 1 ? '\\phi' : `${a}\\phi`}+${b})`;
+  });
+  return stripOuter(s);   // "phi^2" alone folds to "(phi+1)" — drop the now-redundant wrapping parens
+}
+
 /* Replace internal IVAR/unit aliases back to their real letters for display */
 function disp(str) {
   let s = String(str).replace(new RegExp(IVAR, 'g'), 'i');
   for (const [letter, alias] of Object.entries(UNIT_ALIASES)) s = s.replace(new RegExp(alias, 'g'), letter);
   // internal derivative-function names (fPRIME1) → back to quote notation (f')
   s = s.replace(/PRIME(\d+)/g, (m, k) => "'".repeat(+k));
+  s = foldPhiPowers(s);
+  // Internally "log(x)" (one argument) IS the natural log everywhere in this file,
+  // to match mathjs/nerdamer's own default — but showing the user a literal
+  // "log(...)" reads as base-10. Only the rendered TeX is touched (never re-parsed
+  // by math.evaluate/nerdamer, unlike the plain text form) and only nerdamer's exact
+  // one-argument shape ("\mathrm{log}\left(" with no "_{base}" in between) — a
+  // log(x,10) call renders with a "_{10}" in between and keeps showing as log.
+  s = s.split('\\mathrm{log}\\left(').join('\\ln\\left(');
+  // Drop the explicit \cdot nerdamer's toTeX() always inserts between multiplied
+  // factors — juxtaposition (2x, ex, x\sqrt2) is normal math notation; only keep it
+  // between two adjacent digit runs, where dropping it would visually merge two
+  // different numbers into one (2 \cdot 3 must not become "23").
+  s = s.replace(/\s*\\cdot\s*/g, (m, offset, full) => {
+    let p = offset - 1; while (p >= 0 && full[p] === ' ') p--;
+    let q = offset + m.length; while (q < full.length && full[q] === ' ') q++;
+    const isDigit = ch => ch >= '0' && ch <= '9';
+    return (isDigit(full[p] || '') && isDigit(full[q] || '')) ? ' \\cdot ' : '';
+  });
   return s;
 }
 
