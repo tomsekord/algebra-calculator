@@ -3871,12 +3871,31 @@ function logicLineAssignment(latex) {
   return null;
 }
 
+/* The internal display text for a proposition/quantifier (e.g. "∃x(x>5)")
+   uses plain unicode symbols, not real LaTeX commands — fine for the string
+   equality the tokenizer/scope use to match a usage site back to its given
+   assignment, but not valid TeX source. Convert it to actual LaTeX commands
+   so it can be run through KaTeX the same way every Algebra result is,
+   instead of showing as unstyled plain text. */
+function logicDisplayToTeX(display) {
+  return display
+    .replace(/∃/g, '\\exists ').replace(/∀/g, '\\forall ')
+    .replace(/¬/g, '\\neg ').replace(/∧/g, '\\wedge ').replace(/∨/g, '\\vee ')
+    .replace(/⊕/g, '\\oplus ').replace(/→/g, '\\to ').replace(/↔/g, '\\leftrightarrow ')
+    .replace(/≤/g, '\\le ').replace(/≥/g, '\\ge ').replace(/≠/g, '\\neq ');
+}
+
 function evalLogicLine(latex) {
   const asg = logicLineAssignment(latex);
   if (asg) {
     logicScope.set(asg.key, asg.value);
     logicKnownDisplay.set(asg.key, { display: asg.display, value: asg.value });
-    return { text: `${asg.display} = ${asg.value ? 'True' : 'False'}`, cls: asg.value ? 'ok' : null };
+    const word = asg.value ? 'True' : 'False';
+    return {
+      tex: `${logicDisplayToTeX(asg.display)} = \\text{${word}}`,
+      text: `${asg.display} = ${word}`,
+      cls: asg.value ? 'ok' : null,
+    };
   }
   const tokens = logicTokenize(latex);
   if (!tokens.length) return null;
@@ -3907,7 +3926,12 @@ function evaluateLogicAll() {
           arrow.textContent = '→';
           if (out.cls) result.classList.add(out.cls);
           line.classList.add(out.cls === 'err' ? 'is-error' : 'is-result');
-          result.textContent = out.text;
+          if (out.tex && out.cls !== 'err') {
+            try { result.innerHTML = katex.renderToString(out.tex, { throwOnError: false }); }
+            catch { result.textContent = out.text; }
+          } else {
+            result.textContent = out.text;
+          }
         }
       } catch (err) {
         arrow.textContent = '→';
@@ -3931,7 +3955,8 @@ function renderLogicVarsPanel() {
     row.className = 'var-item';
     const nameEl = document.createElement('span');
     nameEl.className = 'var-name';
-    nameEl.textContent = info.display;
+    try { nameEl.innerHTML = katex.renderToString(logicDisplayToTeX(info.display), { throwOnError: false }); }
+    catch { nameEl.textContent = info.display; }
     const valEl = document.createElement('span');
     valEl.className = 'var-val';
     valEl.textContent = info.value ? 'True' : 'False';
