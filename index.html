@@ -499,12 +499,15 @@
         <button class="kb op" onclick="LK.cmd('\\wedge')" title="Conjunction (AND)">∧</button>
         <button class="kb op" onclick="LK.cmd('\\vee')" title="Disjunction (OR)">∨</button>
         <button class="kb op" onclick="LK.cmd('\\oplus')" title="Exclusive or (XOR)">⊕</button>
+        <button class="kb op" onclick="LK.write('⊼')" title="Not and (NAND)">⊼</button>
+        <button class="kb op" onclick="LK.write('⊽')" title="Not or (NOR)">⊽</button>
         <button class="kb op" onclick="LK.cmd('\\to')" title="Implies">→</button>
         <button class="kb op" onclick="LK.cmd('\\leftrightarrow')" title="If and only if">↔</button>
         <div class="kb-sep"></div>
         <button class="kb op" onclick="LK.cmd('\\exists')" title="There exists">∃</button>
         <button class="kb op" onclick="LK.cmd('\\forall')" title="For all">∀</button>
       </div>
+      <div class="kb-section-label" style="margin-top:2px">Typing words also works: not, and, or, xor, nand, nor, implies, iff</div>
 
       <div class="kb-section-label">Values &amp; comparisons</div>
       <div class="kb-row">
@@ -644,7 +647,8 @@ let activeMQ = null, activeLine = null;
      re-entrant — MathQuill's own keystroke processing silently reverts it
      once the handler returns — so the actual fix has to happen next tick. */
 const lastLatexByLine = new WeakMap();
-function autoArrow(mq) {
+function autoArrow(mq, onDone) {
+  onDone = onDone || scheduleEval;
   const line = mq.el().closest('.line');
   const stableMQ = (line && line._mq) || mq;
   const key = line || mq;
@@ -659,8 +663,48 @@ function autoArrow(mq) {
   setTimeout(() => {
     stableMQ.keystroke('Backspace'); stableMQ.keystroke('Backspace'); stableMQ.write('\\to ');
     lastLatexByLine.set(key, stableMQ.latex());
-    scheduleEval();
+    onDone();
   }, 0);
+}
+
+/* Typing a whole connective word (not/and/or/xor/nand/nor/implies/iff) in the
+   Logic tab converts it to the matching symbol — same diff-and-replace
+   trick as autoArrow above (kept as a separate function since it needs its
+   own last-seen-latex tracking; sharing autoArrow's WeakMap would have each
+   function stomp the other's "before" snapshot when both run on the same
+   keystroke). Case-insensitive, and requires a non-letter (or start of
+   line) right before the word so it doesn't fire mid-identifier. */
+const lastLogicWordLatex = new WeakMap();
+const LOGIC_WORD_MAP = {
+  implies: '\\to', iff: '\\leftrightarrow',   // longer words first so e.g. "nand" isn't caught by a shorter rule first
+  nand: '⊼', nor: '⊽',
+  not: '\\neg', and: '\\wedge', or: '\\vee', xor: '\\oplus',
+};
+function autoLogicWords(mq) {
+  const line = mq.el().closest('.line');
+  const stableMQ = (line && line._mq) || mq;
+  const key = line || mq;
+  const newLatex = stableMQ.latex();
+  const oldLatex = lastLogicWordLatex.get(key) || '';
+  lastLogicWordLatex.set(key, newLatex);
+  if (newLatex.length !== oldLatex.length + 1) return;
+  let p = 0;
+  while (p < oldLatex.length && oldLatex[p] === newLatex[p]) p++;
+  if (oldLatex.slice(p) !== newLatex.slice(p + 1)) return;   // must be a clean single-char insertion
+  for (const [word, replacement] of Object.entries(LOGIC_WORD_MAP)) {
+    const start = p + 1 - word.length;
+    if (start < 0) continue;
+    if (newLatex.slice(start, p + 1).toLowerCase() !== word) continue;
+    const before = newLatex[start - 1];
+    if (before !== undefined && /[a-zA-Z]/.test(before)) continue;   // part of a longer word — leave it alone
+    setTimeout(() => {
+      for (let i = 0; i < word.length; i++) stableMQ.keystroke('Backspace');
+      if (replacement.startsWith('\\')) stableMQ.cmd(replacement); else stableMQ.write(replacement);
+      lastLogicWordLatex.set(key, stableMQ.latex());
+      scheduleLogicEval();
+    }, 0);
+    return;
+  }
 }
 
 function makeMQConfig() {
@@ -3469,7 +3513,7 @@ function makeLogicMQConfig() {
     autoCommands: 'neg wedge vee oplus to leftrightarrow exists forall le ge neq sqrt pi',
     autoOperatorNames: 'sin cos tan ln',
     handlers: {
-      edit: mq => { autoArrow(mq); onFocusLogicField(mq); scheduleLogicEval(); },
+      edit: mq => { autoArrow(mq, scheduleLogicEval); autoLogicWords(mq); onFocusLogicField(mq); scheduleLogicEval(); },
       enter: mq => enterFromLogic(mq),
       upOutOf: mq => moveVertLogic(mq, -1),
       downOutOf: mq => moveVertLogic(mq, +1),
@@ -3482,6 +3526,7 @@ const LK = {
   ensure() { if (!logicActiveMQ) { const f = document.querySelector('#logicLines .mq-field'); if (f) logicActiveMQ = f.__mq; } return logicActiveMQ; },
   type(t)  { const mq = this.ensure(); if (mq) { mq.typedText(t); mq.focus(); scheduleLogicEval(); } },
   cmd(c)   { const mq = this.ensure(); if (mq) { mq.cmd(c); mq.focus(); scheduleLogicEval(); } },
+  write(l) { const mq = this.ensure(); if (mq) { mq.write(l); mq.focus(); scheduleLogicEval(); } },
   backspace() { const mq = this.ensure(); if (mq) { mq.keystroke('Backspace'); mq.focus(); scheduleLogicEval(); } },
   left()  { const mq = this.ensure(); if (mq) { mq.keystroke('Left'); mq.focus(); } },
   right() { const mq = this.ensure(); if (mq) { mq.keystroke('Right'); mq.focus(); } },
@@ -3633,7 +3678,7 @@ function logicTokenize(rawLatex) {
   // hand off to latexToExpr). Only the logic connectives themselves stop the
   // scan — everything else keeps going until one of those, or an unmatched
   // closing bracket, ends the operand.
-  const STOP_CHARS = new Set(['¬', '∧', '∨', '⊕', '→', '↔']);
+  const STOP_CHARS = new Set(['¬', '∧', '∨', '⊕', '⊼', '⊽', '→', '↔']);
 
   function readParenSpan() {   // assumes s[i] === '(' — returns text INCLUDING the outer parens
     let depth = 0, start = i;
@@ -3712,6 +3757,8 @@ function logicTokenize(rawLatex) {
     if (c === '∧') { tokens.push({ t: 'AND' }); i++; continue; }
     if (c === '∨') { tokens.push({ t: 'OR' }); i++; continue; }
     if (c === '⊕') { tokens.push({ t: 'XOR' }); i++; continue; }
+    if (c === '⊼') { tokens.push({ t: 'NAND' }); i++; continue; }
+    if (c === '⊽') { tokens.push({ t: 'NOR' }); i++; continue; }
     if (c === '→') { tokens.push({ t: 'IMPLIES' }); i++; continue; }
     if (c === '↔') { tokens.push({ t: 'IFF' }); i++; continue; }
     if (c === '∃') { i++; tokens.push(readQuantifier('∃')); continue; }
@@ -3764,8 +3811,22 @@ function logicParseTokens(tokens) {
     if (tok.t === 'IDENT') { advance(); return { op: 'var', name: tok.name }; }
     throw new Error('Unexpected symbol in the formula.');
   }
-  function parseAnd() { let n = parseAtom(); while (peek() && peek().t === 'AND') { advance(); n = { op: 'and', a: n, b: parseAtom() }; } return n; }
-  function parseOr()  { let n = parseAnd(); while (peek() && peek().t === 'OR')  { advance(); n = { op: 'or',  a: n, b: parseAnd() }; } return n; }
+  function parseAnd() {
+    let n = parseAtom();
+    while (peek() && (peek().t === 'AND' || peek().t === 'NAND')) {
+      const isNand = advance().t === 'NAND';
+      n = { op: isNand ? 'nand' : 'and', a: n, b: parseAtom() };
+    }
+    return n;
+  }
+  function parseOr() {
+    let n = parseAnd();
+    while (peek() && (peek().t === 'OR' || peek().t === 'NOR')) {
+      const isNor = advance().t === 'NOR';
+      n = { op: isNor ? 'nor' : 'or', a: n, b: parseAnd() };
+    }
+    return n;
+  }
   function parseXor() { let n = parseOr();  while (peek() && peek().t === 'XOR') { advance(); n = { op: 'xor', a: n, b: parseOr() }; } return n; }
   function parseImplies() {
     const n = parseXor();
@@ -3821,6 +3882,8 @@ function logicEvalNode(node, scope) {
     case 'not': return !logicEvalNode(node.a, scope);
     case 'and': return logicEvalNode(node.a, scope) && logicEvalNode(node.b, scope);
     case 'or': return logicEvalNode(node.a, scope) || logicEvalNode(node.b, scope);
+    case 'nand': return !(logicEvalNode(node.a, scope) && logicEvalNode(node.b, scope));
+    case 'nor': return !(logicEvalNode(node.a, scope) || logicEvalNode(node.b, scope));
     case 'xor': return logicEvalNode(node.a, scope) !== logicEvalNode(node.b, scope);
     case 'implies': return !logicEvalNode(node.a, scope) || logicEvalNode(node.b, scope);
     case 'iff': return logicEvalNode(node.a, scope) === logicEvalNode(node.b, scope);
