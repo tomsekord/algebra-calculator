@@ -928,6 +928,7 @@ const PALETTE = {
     { sym: '∫ᵇₐ',  name: 'Definite integral', act: () => K.writeTemplate('\\int_{0}^{1}\\left(\\right)dx', 3) },
     { sym: 'Σ',    name: 'Summation',  act: () => K.writeTemplate('\\sum_{n=1}^{10}\\left(\\right)', 1) },
     { sym: 'lim',  name: 'Limit',      act: () => K.writeTemplate('\\lim_{x\\to0}\\left(\\right)', 1) },
+    { sym: 'taylor', name: 'Taylor series: taylor(f(x), x, a, n)', act: () => K.type('taylor(') },
   ],
   'Algebra': [
     { sym: 'factor',   name: 'Factor',   act: () => K.type('factor(') },
@@ -1395,6 +1396,10 @@ function evalExpr(expr, line) {
   // Symbolic word-commands: factor(...), expand(...), simplify(...)
   const cmd = expr.match(/^(factor|expand|simplify)\((.*)\)$/s);
   if (cmd) return symbolicCmd(cmd[1], cmd[2]);
+
+  // taylor(f(x), x, a, n) — Taylor polynomial of f around x=a, through the n-th term
+  const taylorCmd = expr.match(/^taylor\((.*)\)$/s);
+  if (taylorCmd) return evalTaylor(taylorCmd[1]);
 
   const trimmed = expr.trim();
 
@@ -2357,6 +2362,54 @@ function symbolicCmd(name, inner) {
     if (dec) return dec;
   }
   return { tex: safeTeX(out), text: disp(str), cls: 'sym' };
+}
+
+/* taylor(f(x), x, a, n) — the degree-n Taylor polynomial of f around x=a:
+   sum_{k=0}^{n} f^(k)(a)/k! * (x-a)^k. Built by hand via repeated
+   nerdamer.diff() (nerdamer 1.1.13's core build has no taylor() of its own)
+   rather than nerdamer's general series machinery, so each derivative can be
+   freeVar'd the same defensive way every other calculus path in this file is
+   (a solved value for the expansion variable elsewhere must not leak in). */
+function evalTaylor(argsStr) {
+  const USAGE = 'Use taylor(f(x), x, a, n) — the formula, the variable, the point to expand around, and how many terms.';
+  const parts = splitList('[' + argsStr + ']');
+  if (parts.length !== 4) return { text: USAGE, cls: 'err' };
+  const [fExpr, vRaw, aExpr, nExpr] = parts;
+  const v = stripOuter(vRaw).trim();
+  if (!/^[a-zA-Z]\w*$/.test(v)) return { text: 'The second argument to taylor(...) should be a single variable, like x.', cls: 'err' };
+
+  let a, n;
+  try { a = math.evaluate(aExpr, numScope); } catch { return { text: 'Couldn’t work out the point to expand around — check that argument.', cls: 'err' }; }
+  try { n = Math.round(math.evaluate(nExpr, numScope)); } catch { return { text: 'Couldn’t work out how many terms to use — check the last argument.', cls: 'err' }; }
+  if (typeof a !== 'number' || !isFinite(a)) return { text: 'The point to expand around should be a plain number.', cls: 'err' };
+  if (!isFinite(n) || n < 0) return { text: 'The last argument to taylor(...) should be a non-negative whole number of terms.', cls: 'err' };
+  if (n > 12) return { text: 'That’s a lot of terms — try 12 or fewer so the result stays readable.', cls: 'err' };
+
+  let fac = 1, deriv = fExpr, sumStr = null;
+  for (let k = 0; k <= n; k++) {
+    if (k > 0) {
+      freeVar(v);
+      try { deriv = nerdamer.diff(deriv, v).toString(); } catch { return { text: `Couldn’t differentiate this ${k} time${k === 1 ? '' : 's'} — check the formula.`, cls: 'err' }; }
+      nerdExact();
+    }
+    let coeffExpr;
+    try {
+      freeVar(v);
+      const valAtA = nerdamer(deriv).sub(v, `(${a})`).toString();
+      nerdExact();
+      coeffExpr = `(${valAtA})/(${fac})`;
+    } catch { return { text: 'Couldn’t evaluate a derivative at that point — check the formula and the point.', cls: 'err' }; }
+    const termStr = k === 0 ? coeffExpr : `(${coeffExpr})*(${v}-(${a}))^${k}`;
+    sumStr = sumStr === null ? termStr : `${sumStr}+${termStr}`;
+    fac *= (k + 1);
+  }
+
+  let s;
+  try { s = nerdamer(sumStr).expand(); } catch { try { s = nerdamer(sumStr); } catch { return { text: 'Couldn’t simplify the resulting series.', cls: 'err' }; } }
+  nerdExact();
+  const str = s.toString();
+  if (decimalMode || /\d{6,}/.test(str)) { const dec = tryDecimalCoeffForm(str); if (dec) return dec; }
+  return { tex: safeTeX(s), text: disp(str), cls: 'sym' };
 }
 
 /* ============================================================
