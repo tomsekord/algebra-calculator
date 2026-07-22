@@ -908,7 +908,9 @@ function buildQwerty() {
                `<button class="kb op" onclick="K.type('}')">}</button>` +
                `<button class="kb op" onclick="K.type('~')">~</button>` +
                `<button class="kb op" onclick="K.type(':')">:</button>` +
-               `<button class="kb op" onclick="K.type(',')">,</button>` +
+               `<button class="kb op" onclick="K.cmd('\\le')" title="Less than or equal to">≤</button>` +
+               `<button class="kb op" onclick="K.cmd('\\ge')" title="Greater than or equal to">≥</button>` +
+               `<button class="kb op" onclick="K.type(',')" title="Separate an equation from a domain, e.g. sin(x)=0.5, 0≤x≤2π">,</button>` +
                `<button class="kb op" onclick="K.type('\\'')" title="Derivative prime">'</button>` +
                `<button class="kb enter" onclick="K.enter()">↵</button>`;
   host.innerHTML =
@@ -1303,6 +1305,114 @@ function nerdExact() { try { nerdamer.getCore().Settings.PARSE2NUMBER = false; }
    as the unknown we're trying to solve for. Clear it right before solving for it. */
 function freeVar(name) { try { nerdamer.setVar(name, 'delete'); } catch {} }
 
+/* Split a raw LaTeX string on top-level commas (brace-depth aware, so a comma
+   inside \operatorname{}, a function call, etc. doesn't split). */
+function splitTopCommaLatex(latex) {
+  const parts = []; let depth = 0, cur = '';
+  for (const c of latex) {
+    if (c === '{') depth++;
+    else if (c === '}') depth--;
+    if (c === ',' && depth === 0) { parts.push(cur); cur = ''; }
+    else cur += c;
+  }
+  parts.push(cur);
+  return parts;
+}
+
+/* Apply one domain-restriction segment ("0 \le x", "x \le 2\pi", or a
+   chained "0 \le x \le 2\pi") to a running {lo, hi} range for variable `v`,
+   tightening whichever side(s) it constrains. Returns false if the segment
+   doesn't have `v` as one side of every relation in the chain (unparseable
+   as a bound), true otherwise. */
+function applyDomainSegment(seg, v, bounds) {
+  const OPRE = /(<=|>=|\\leq|\\geq|\\le|\\ge|<|>)/;
+  const tokens = seg.split(OPRE);
+  if (tokens.length < 3 || tokens.length % 2 === 0) return false;
+  const exprsRaw = [], ops = [];
+  for (let i = 0; i < tokens.length; i++) {
+    if (i % 2 === 0) exprsRaw.push(tokens[i]);
+    else ops.push(/^(<=|\\leq|\\le)$/.test(tokens[i].trim()) ? '<=' : '>=');
+  }
+  let exprs;
+  try { exprs = exprsRaw.map(e => stripOuter(latexToExpr(e, complexMode)).trim()); } catch { return false; }
+
+  const evalBound = e => { try { const val = math.evaluate(e, numScope); return (typeof val === 'number' && isFinite(val)) ? val : null; } catch { return null; } };
+  let applied = false;
+  for (let i = 0; i < ops.length; i++) {
+    const left = exprs[i], op = ops[i], right = exprs[i + 1];
+    if (left === v) {
+      const val = evalBound(right); if (val == null) return false;
+      if (op === '<=') bounds.hi = Math.min(bounds.hi, val); else bounds.lo = Math.max(bounds.lo, val);
+      applied = true;
+    } else if (right === v) {
+      const val = evalBound(left); if (val == null) return false;
+      if (op === '<=') bounds.lo = Math.max(bounds.lo, val); else bounds.hi = Math.min(bounds.hi, val);
+      applied = true;
+    } else return false;
+  }
+  return applied;
+}
+
+/* "sin(x)=22, 0≤x≤2π" — an equation together with a domain restriction on
+   its variable, comma-separated. Rather than solving for a specific value
+   (which may not even be unique — sin(x)=0.5 has two solutions in [0,2π]),
+   this answers the yes/no question "does a solution exist in that range?" by
+   sampling the difference lhs(x)-rhs(x) across the range and looking for a
+   sign change or near-zero hit. That numeric approach (rather than reusing
+   the symbolic single-answer solvers) is what correctly handles a periodic
+   equation whose one "principal" solution might fall outside the range even
+   though another instance of it doesn't. Returns null if the line doesn't
+   have this "equation, domain..." shape at all (falls through to normal
+   handling), so a genuine bare inequality still gets the usual rejection. */
+function tryDomainCheck(latex) {
+  if (!/[<>]|\\(geq?|leq?)(?![a-zA-Z])/.test(latex)) return null;
+  const segs = splitTopCommaLatex(latex);
+  if (segs.length < 2) return null;
+
+  const eqIdx = segs.findIndex(s => /(?<![<>=])=(?!=)/.test(s) && !/[<>]|\\(geq?|leq?)(?![a-zA-Z])/.test(s));
+  if (eqIdx === -1) return null;
+  const domainSegs = segs.filter((_, i) => i !== eqIdx);
+  if (!domainSegs.every(s => /[<>]|\\(geq?|leq?)(?![a-zA-Z])/.test(s))) return null;
+
+  let lhs, rhs;
+  try {
+    const expr = latexToExpr(segs[eqIdx], complexMode);
+    const m = expr.match(/(?<![=<>])=(?!=)/);
+    if (!m) return null;
+    lhs = expr.slice(0, m.index).trim(); rhs = expr.slice(m.index + 1).trim();
+  } catch { return null; }
+
+  const unknowns = findUnknowns(`${lhs},${rhs}`);
+  if (unknowns.length !== 1) return null;   // only the single-variable case is supported
+  const v = unknowns[0];
+
+  const bounds = { lo: -1000, hi: 1000 };
+  for (const seg of domainSegs) {
+    let ok = false;
+    try { ok = applyDomainSegment(seg, v, bounds); } catch { ok = false; }
+    if (!ok) return { text: `I understood the equation, but couldn’t make sense of the domain "${seg.trim()}" — try a form like 0 ≤ ${disp(v)} ≤ 2π.`, cls: 'err' };
+  }
+  if (bounds.lo > bounds.hi) return { text: '✗  False — that domain is empty (the lower bound is above the upper bound).', cls: null };
+
+  const f = x => {
+    try {
+      const l = math.evaluate(lhs, { ...numScope, [v]: x }), r = math.evaluate(rhs, { ...numScope, [v]: x });
+      return (typeof l === 'number' && typeof r === 'number' && isFinite(l) && isFinite(r)) ? l - r : NaN;
+    } catch { return NaN; }
+  };
+  const N = 4000;
+  let prev = f(bounds.lo);
+  if (isFinite(prev) && Math.abs(prev) < 1e-9) return { text: '✓  True', cls: 'ok' };
+  for (let i = 1; i <= N; i++) {
+    const x = bounds.lo + (bounds.hi - bounds.lo) * i / N;
+    const cur = f(x);
+    if (isFinite(cur) && Math.abs(cur) < 1e-6) return { text: '✓  True', cls: 'ok' };
+    if (isFinite(prev) && isFinite(cur) && prev * cur < 0) return { text: '✓  True', cls: 'ok' };
+    prev = cur;
+  }
+  return { text: '✗  False — no solution in that range.', cls: null };
+}
+
 /* ── Route a line by its LaTeX ── */
 function evalLatex(latex, line) {
   nerdExact();
@@ -1320,6 +1430,13 @@ function evalLatex(latex, line) {
   if (/\\sum/.test(latex))           return evalSum(latex);
   if (/\\prod/.test(latex))          return evalProd(latex);
   if (/\\lim/.test(latex))           return evalLimit(latex);
+
+  // "sin(x)=22, 0≤x≤2π" — an equation plus a domain restriction, separated by
+  // a comma: does a solution exist in that range? True/false, not a specific
+  // value (checked before the blanket inequality rejection below, since this
+  // IS legitimate use of inequality symbols).
+  const domainResult = tryDomainCheck(latex);
+  if (domainResult) return domainResult;
 
   // Inequalities: without this, "x>2" would fall through to nerdamer, which
   // quietly evaluates the comparison to 0/1 — shown as a confident numeric
