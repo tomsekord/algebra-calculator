@@ -188,7 +188,7 @@
       main { padding-bottom:calc(48vh + 20px); }
       .kb-wrap { max-height:48vh; }
       .app-row { flex-direction:column; padding:0 16px; }
-      .vars-panel { width:100%; }
+      .vars-panel { width:100%; max-height:180px; overflow-y:auto; }
       .vars-list { flex-direction:row; flex-wrap:wrap; }
       .var-item { flex:0 0 auto; }
     }
@@ -516,13 +516,37 @@
         <button class="kb op" onclick="LK.type('>')">></button>
         <button class="kb op" onclick="LK.cmd('\\le')">≤</button>
         <button class="kb op" onclick="LK.cmd('\\ge')">≥</button>
-        <button class="kb op" onclick="LK.type('(')">(</button>
-        <button class="kb op" onclick="LK.type(')')">)</button>
         <button class="kb del" onclick="LK.backspace()">⌫</button>
       </div>
 
-      <div class="kb-section-label">Letters</div>
-      <div class="kb-row" id="logicLetters"></div>
+      <div class="kb-section-label">Numbers &amp; algebra</div>
+      <div class="kb-row">
+        <button class="kb num" onclick="LK.type('7')">7</button>
+        <button class="kb num" onclick="LK.type('8')">8</button>
+        <button class="kb num" onclick="LK.type('9')">9</button>
+        <button class="kb num" onclick="LK.type('4')">4</button>
+        <button class="kb num" onclick="LK.type('5')">5</button>
+        <button class="kb num" onclick="LK.type('6')">6</button>
+        <button class="kb num" onclick="LK.type('1')">1</button>
+        <button class="kb num" onclick="LK.type('2')">2</button>
+        <button class="kb num" onclick="LK.type('3')">3</button>
+        <button class="kb num" onclick="LK.type('0')">0</button>
+        <button class="kb op" onclick="LK.type('.')">.</button>
+        <div class="kb-sep"></div>
+        <button class="kb op" onclick="LK.type('+')">+</button>
+        <button class="kb op" onclick="LK.type('-')">−</button>
+        <button class="kb op" onclick="LK.type('*')">×</button>
+        <button class="kb op" onclick="LK.type('/')">÷</button>
+        <button class="kb op" onclick="LK.cmd('^')" title="Power">xʸ</button>
+        <button class="kb op" onclick="LK.type('(')">(</button>
+        <button class="kb op" onclick="LK.type(')')">)</button>
+      </div>
+
+      <div class="kb-section-label">Uppercase letters — propositions (A=True, ...)</div>
+      <div class="kb-row" id="logicLettersUpper"></div>
+
+      <div class="kb-section-label">Lowercase letters — variables (used in n^2=4, x&gt;5, ...)</div>
+      <div class="kb-row" id="logicLettersLower"></div>
 
       <div class="kb-row" style="margin-top:6px">
         <button class="kb" onclick="LK.left()">←</button>
@@ -3454,11 +3478,18 @@ const LK = {
 };
 
 function buildLogicLetters() {
-  const host = document.getElementById('logicLetters');
-  if (!host) return;
-  let html = '';
-  for (const ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') html += `<button class="kb var" onclick="LK.type('${ch}')">${ch}</button>`;
-  host.innerHTML = html;
+  const upper = document.getElementById('logicLettersUpper');
+  const lower = document.getElementById('logicLettersLower');
+  if (upper) {
+    let html = '';
+    for (const ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') html += `<button class="kb var" onclick="LK.type('${ch}')">${ch}</button>`;
+    upper.innerHTML = html;
+  }
+  if (lower) {
+    let html = '';
+    for (const ch of 'abcdefghijklmnopqrstuvwxyz') html += `<button class="kb var" onclick="LK.type('${ch}')">${ch}</button>`;
+    lower.innerHTML = html;
+  }
 }
 
 /* ── Logic line management (parallels addLine/allLines/renumber/deleteLine —
@@ -3550,17 +3581,21 @@ function logicNormalizeLatex(latex) {
     // substring "\left", so stripping \left before converting it would mangle
     // it into a bare "rightarrow" with no backslash, and the \leftrightarrow
     // conversion below would never get a chance to match it.
-    .replace(/\\leq\b|\\le\b/g, '≤')
-    .replace(/\\geq\b|\\ge\b/g, '≥')
-    .replace(/\\neq\b|\\ne\b/g, '≠')
-    .replace(/\\neg\b|\\lnot\b/g, '¬')
-    .replace(/\\wedge\b|\\land\b/g, '∧')
-    .replace(/\\vee\b|\\lor\b/g, '∨')
-    .replace(/\\oplus\b/g, '⊕')
-    .replace(/\\leftrightarrow\b|\\iff\b/g, '↔')
-    .replace(/\\to\b|\\rightarrow\b|\\implies\b/g, '→')
-    .replace(/\\exists\b/g, '∃')
-    .replace(/\\forall\b/g, '∀')
+    // Note: (?![a-zA-Z]) rather than \b — \b treats a following DIGIT as a
+    // word-boundary-less neighbor (both are "word" characters to regex), so
+    // "\geq0" (no space before the 0, exactly what MathQuill often emits)
+    // would never match a trailing \b and silently stay unconverted.
+    .replace(/\\leq(?![a-zA-Z])|\\le(?![a-zA-Z])/g, '≤')
+    .replace(/\\geq(?![a-zA-Z])|\\ge(?![a-zA-Z])/g, '≥')
+    .replace(/\\neq(?![a-zA-Z])|\\ne(?![a-zA-Z])/g, '≠')
+    .replace(/\\neg(?![a-zA-Z])|\\lnot(?![a-zA-Z])/g, '¬')
+    .replace(/\\wedge(?![a-zA-Z])|\\land(?![a-zA-Z])/g, '∧')
+    .replace(/\\vee(?![a-zA-Z])|\\lor(?![a-zA-Z])/g, '∨')
+    .replace(/\\oplus(?![a-zA-Z])/g, '⊕')
+    .replace(/\\leftrightarrow(?![a-zA-Z])|\\iff(?![a-zA-Z])/g, '↔')
+    .replace(/\\to(?![a-zA-Z])|\\rightarrow(?![a-zA-Z])|\\implies(?![a-zA-Z])/g, '→')
+    .replace(/\\exists(?![a-zA-Z])/g, '∃')
+    .replace(/\\forall(?![a-zA-Z])/g, '∀')
     .replace(/\\left/g, '').replace(/\\right/g, '')
     .replace(/\\,/g, ' ').replace(/\\!/g, '').replace(/\\;/g, ' ').replace(/\\ /g, ' ');
 }
@@ -3579,7 +3614,15 @@ function logicTokenize(rawLatex) {
   const tokens = [];
   let i = 0;
   const skipSpace = () => { while (s[i] === ' ') i++; };
-  const ARITH_CHAR = /[a-zA-Z0-9.+\-*^ ]/;
+  // Everything that can legally appear inside a comparison's operand is
+  // allowed through (including backslash commands like \sin, \sqrt, \pi —
+  // by this point logicNormalizeLatex has already converted every logic
+  // connective/relation backslash-command into a single unicode character,
+  // so any backslash still in the string is a genuine math command, safe to
+  // hand off to latexToExpr). Only the logic connectives themselves stop the
+  // scan — everything else keeps going until one of those, or an unmatched
+  // closing bracket, ends the operand.
+  const STOP_CHARS = new Set(['¬', '∧', '∨', '⊕', '→', '↔']);
 
   function readParenSpan() {   // assumes s[i] === '(' — returns text INCLUDING the outer parens
     let depth = 0, start = i;
@@ -3607,7 +3650,7 @@ function logicTokenize(rawLatex) {
       const c = s[p];
       if (c === '(' || c === '{') { depth++; p++; continue; }
       if (c === ')' || c === '}') { if (depth === 0) break; depth--; p++; continue; }
-      if (depth === 0 && !ARITH_CHAR.test(c)) break;
+      if (depth === 0 && (STOP_CHARS.has(c) || c === '=' || c === '<' || c === '>' || c === '≤' || c === '≥' || c === '≠')) break;
       p++;
     }
     return p;
@@ -3642,7 +3685,17 @@ function logicTokenize(rawLatex) {
     skipSpace();
     if (i >= s.length) break;
     const c = s[i];
-    if (c === '(') { tokens.push({ t: 'LPAREN' }); i++; continue; }
+    if (c === '(') {
+      // Could be a logical grouping paren ("(A∧B)") or the start of an
+      // arithmetic operand ("(2)^2=4", e.g. from substituting a negative or
+      // parenthesized value into a quantifier body) — try reading it as a
+      // comparison first; a plain grouping paren has no top-level relational
+      // operator inside it, so tryReadComparison harmlessly returns null and
+      // falls back to normal grouping.
+      const cmp = tryReadComparison();
+      if (cmp) { tokens.push(cmp); continue; }
+      tokens.push({ t: 'LPAREN' }); i++; continue;
+    }
     if (c === ')') { tokens.push({ t: 'RPAREN' }); i++; continue; }
     if (c === '¬') { tokens.push({ t: 'NOT' }); i++; continue; }
     if (c === '∧') { tokens.push({ t: 'AND' }); i++; continue; }
@@ -3662,6 +3715,17 @@ function logicTokenize(rawLatex) {
       if (/^\d+(\.\d+)?$/.test(name)) throw new Error(`"${name}" is just a number — Logic mode needs a True/False statement, like ${name}=${name}, or a comparison such as x>5.`);
       tokens.push({ t: 'IDENT', name });
       continue;
+    }
+    if (c === '\\') {
+      // A backslash math command (\sin, \sqrt, \pi, ...) — every logic
+      // connective backslash-command has already been converted to a single
+      // unicode character above, so this can only be genuine math. Try it as
+      // the start of a comparison operand (e.g. "\sin(x)=2"); if it doesn't
+      // resolve into one, there's nothing else a bare function call means on
+      // its own (not a True/False statement without comparing it to something).
+      const cmp = tryReadComparison();
+      if (cmp) { tokens.push(cmp); continue; }
+      throw new Error(`A formula by itself isn't True/False — did you mean to compare it with something, like ${s.slice(i, tryReadOperand(i))}=2?`);
     }
     throw new Error(`I don't know what to do with "${c}" here — Logic mode evaluates True/False statements (comparisons, and connectives like ∧ ∨ ¬ → ↔), not plain arithmetic.`);
   }
@@ -3704,6 +3768,41 @@ function logicParseTokens(tokens) {
   return result;
 }
 
+/* When a quantified expression has no explicit given truth value, attempt to
+   actually determine one via bounded integer search — "∃n(n^2=4)" (there is
+   an integer n such that n²=4) is genuinely decidable that way, not just
+   something that has to be told to the calculator. Substitutes each trial
+   integer for the bound variable (word-boundary text substitution) and
+   re-runs the FULL logic pipeline on the result, so a compound body
+   (∃x(x>0 ∧ x<10)) works too, not just a single bare comparison. Returns
+   true/false if determined, or null if inconclusive (falls back to
+   requiring an explicit given) — this is a bounded practical search, not a
+   proof, so a "false" from ∀ or an exhausted ∃ search only means "true
+   within the searched range", worded that way by the caller isn't
+   attempted here since plain true/false is what the rest of the evaluator
+   expects. */
+function tryEvalQuantifier(node, scope) {
+  const m = node.display.match(/^([∃∀])([a-zA-Z])\((.*)\)$/);
+  if (!m) return null;
+  const [, sym, boundVar, bodyInner] = m;
+  const RANGE = 200;
+  const sub = new RegExp(`\\b${boundVar}\\b`, 'g');
+  let sawResult = false;
+  for (let k = -RANGE; k <= RANGE; k++) {
+    const substituted = bodyInner.replace(sub, `(${k})`);
+    let val;
+    try {
+      const toks = logicTokenize(substituted);
+      val = logicEvalNode(logicParseTokens(toks), scope);
+    } catch { continue; }   // this k didn't evaluate cleanly — skip it, not a hard failure
+    sawResult = true;
+    if (sym === '∃' && val) return true;
+    if (sym === '∀' && !val) return false;
+  }
+  if (!sawResult) return null;   // never got a usable evaluation — can't conclude anything
+  return sym === '∃' ? false : true;
+}
+
 /* ── Evaluator ── */
 function logicEvalNode(node, scope) {
   switch (node.op) {
@@ -3717,9 +3816,12 @@ function logicEvalNode(node, scope) {
     case 'var':
       if (!scope.has(node.name)) throw new Error(`"${node.name}" has no truth value yet — add a line like "${node.name}=True" first.`);
       return scope.get(node.name);
-    case 'quant':
-      if (!scope.has(node.key)) throw new Error(`"${node.display}" has no given truth value — add a line like "${node.display}=True" first.`);
-      return scope.get(node.key);
+    case 'quant': {
+      if (scope.has(node.key)) return scope.get(node.key);
+      const computed = tryEvalQuantifier(node, scope);
+      if (computed != null) return computed;
+      throw new Error(`"${node.display}" has no given truth value, and I couldn’t determine it by searching integers either — add a line like "${node.display}=True" first.`);
+    }
     case 'cmp': {
       let l, r;
       try { l = math.evaluate(latexToExpr(node.left, false), {}); } catch { throw new Error(`Couldn't work out "${node.left}".`); }
@@ -3743,12 +3845,18 @@ function logicEvalNode(node, scope) {
    formula line to evaluate to True/False. Checked BEFORE the general
    tokenizer, since the "=True/False" suffix is an assignment-line
    convention, not part of formula grammar. ── */
+// The RHS word "True"/"False" is case-insensitive, but the single-letter
+// shorthand is uppercase-ONLY ("T"/"F") — lowercase letters are for ordinary
+// variables (quantifier-bound variables like n, x in n^2=4), so lowercase
+// "t"/"f" must stay usable as variable names rather than being swallowed as
+// a boolean literal.
+const LOGIC_BOOL_RHS = /(True|true|False|false|T|F)/;
 function logicLineAssignment(latex) {
   const norm = logicNormalizeLatex(latex).trim();
-  let m = norm.match(/^([a-zA-Z][a-zA-Z0-9]*)\s*=\s*(True|False|T|F)$/i);
-  if (m) return { key: m[1], value: /^(true|t)$/i.test(m[2]), display: m[1] };
-  m = norm.match(/^([∃∀]\s*[a-zA-Z]\s*\(.*\))\s*=\s*(True|False|T|F)$/i);
-  if (m) { const d = m[1].replace(/\s+/g, ''); return { key: d, value: /^(true|t)$/i.test(m[2]), display: d }; }
+  let m = norm.match(new RegExp(`^([a-zA-Z][a-zA-Z0-9]*)\\s*=\\s*${LOGIC_BOOL_RHS.source}$`));
+  if (m) return { key: m[1], value: /^(True|true|T)$/.test(m[2]), display: m[1] };
+  m = norm.match(new RegExp(`^([∃∀]\\s*[a-zA-Z]\\s*\\(.*\\))\\s*=\\s*${LOGIC_BOOL_RHS.source}$`));
+  if (m) { const d = m[1].replace(/\s+/g, ''); return { key: d, value: /^(True|true|T)$/.test(m[2]), display: d }; }
   return null;
 }
 
