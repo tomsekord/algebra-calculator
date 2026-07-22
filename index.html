@@ -542,6 +542,16 @@
         <button class="kb op" onclick="LK.type(')')">)</button>
       </div>
 
+      <div class="kb-section-label">Functions — for use inside a comparison, e.g. sin(x)=2</div>
+      <div class="kb-row">
+        <button class="kb fn" onclick="LK.type('sin(')">sin</button>
+        <button class="kb fn" onclick="LK.type('cos(')">cos</button>
+        <button class="kb fn" onclick="LK.type('tan(')">tan</button>
+        <button class="kb fn" onclick="LK.type('ln(')">ln</button>
+        <button class="kb op" onclick="LK.cmd('\\sqrt')">√</button>
+        <button class="kb op" onclick="LK.cmd('\\pi')">π</button>
+      </div>
+
       <div class="kb-section-label">Uppercase letters — propositions (A=True, ...)</div>
       <div class="kb-row" id="logicLettersUpper"></div>
 
@@ -3456,7 +3466,8 @@ let logicKnownDisplay = new Map();   // key -> {display, value} for the sidebar
 function makeLogicMQConfig() {
   return {
     spaceBehavesLikeTab: true,
-    autoCommands: 'neg wedge vee oplus to leftrightarrow exists forall le ge neq',
+    autoCommands: 'neg wedge vee oplus to leftrightarrow exists forall le ge neq sqrt pi',
+    autoOperatorNames: 'sin cos tan ln',
     handlers: {
       edit: mq => { autoArrow(mq); onFocusLogicField(mq); scheduleLogicEval(); },
       enter: mq => enterFromLogic(mq),
