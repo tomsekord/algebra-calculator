@@ -3845,18 +3845,18 @@ function logicEvalNode(node, scope) {
    formula line to evaluate to True/False. Checked BEFORE the general
    tokenizer, since the "=True/False" suffix is an assignment-line
    convention, not part of formula grammar. ── */
-// The RHS word "True"/"False" is case-insensitive, but the single-letter
-// shorthand is uppercase-ONLY ("T"/"F") — lowercase letters are for ordinary
-// variables (quantifier-bound variables like n, x in n^2=4), so lowercase
-// "t"/"f" must stay usable as variable names rather than being swallowed as
-// a boolean literal.
-const LOGIC_BOOL_RHS = /(True|true|False|false|T|F)/;
+// Only the full word "True"/"False" (case-insensitive) is recognized as a
+// boolean literal — no single-letter "T"/"F" shorthand, in EITHER case. T
+// and F are ordinary letters and need to stay free to use as proposition
+// names (as in the classic A, B, C, ... F convention) without any special
+// meaning colliding with them.
+const LOGIC_BOOL_RHS = /(True|true|False|false)/;
 function logicLineAssignment(latex) {
   const norm = logicNormalizeLatex(latex).trim();
   let m = norm.match(new RegExp(`^([a-zA-Z][a-zA-Z0-9]*)\\s*=\\s*${LOGIC_BOOL_RHS.source}$`));
-  if (m) return { key: m[1], value: /^(True|true|T)$/.test(m[2]), display: m[1] };
+  if (m) return { key: m[1], value: /^True$/i.test(m[2]), display: m[1] };
   m = norm.match(new RegExp(`^([∃∀]\\s*[a-zA-Z]\\s*\\(.*\\))\\s*=\\s*${LOGIC_BOOL_RHS.source}$`));
-  if (m) { const d = m[1].replace(/\s+/g, ''); return { key: d, value: /^(True|true|T)$/.test(m[2]), display: d }; }
+  if (m) { const d = m[1].replace(/\s+/g, ''); return { key: d, value: /^True$/i.test(m[2]), display: d }; }
   return null;
 }
 
