@@ -558,8 +558,16 @@ function autoArrow(mq) {
 function makeMQConfig() {
   return {
     spaceBehavesLikeTab: true,
-    autoCommands: 'pi tau theta alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma phi chi psi omega sqrt sum prod int infty pm',
-    autoOperatorNames: 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh ln log exp abs sign floor ceil round gcd lcm mod det factor expand simplify factorial lim nCr nPr taylor',
+    autoCommands: 'pi tau theta alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma phi chi psi omega sqrt sum prod int pm',
+    // "inf" is a MathQuill built-in operator name (mathematically it's short for
+    // "infimum", not infinity) — MathQuill won't let it be remapped via
+    // autoCommands at all (throws "is a built-in operator name"), and it collides
+    // as a PREFIX with "infty" there too (typing "infty" would stop expanding
+    // after "inf" and leave "ty" dangling). Routing it through autoOperatorNames
+    // instead sidesteps both problems — it's the only way to get "inf" to trigger
+    // anything by typing — and parseCommand below treats \inf as infinity, same
+    // as \infty (this calculator has no notion of infimum to conflict with).
+    autoOperatorNames: 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh ln log exp abs sign floor ceil round gcd lcm mod det factor expand simplify factorial lim nCr nPr taylor inf',
     handlers: {
       edit: mq => { autoArrow(mq); onFocusField(mq); recordHistory(); scheduleEval(); },
       enter: mq => enterFrom(mq),
@@ -3005,7 +3013,7 @@ function latexToExpr(tex, complex) {
       case 'tau': return '(2*pi)';
       case 'cdot': case 'times': return '*';
       case 'div': return '/';
-      case 'infty': return 'Infinity';
+      case 'infty': case 'inf': return 'Infinity';
       case 'pm': case 'mp': return '±';   // both produce a "one side or the other" split — see pmBranches
       case 'theta': case 'vartheta': return 'theta';
       case 'alpha': case 'beta': case 'gamma': case 'delta': case 'epsilon':
