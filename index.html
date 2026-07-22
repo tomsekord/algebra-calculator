@@ -1030,6 +1030,26 @@ function funcDefHead(line) {
   return m && !BUILTINS.has(m[1]) ? m : null;
 }
 
+/* Match a "name_sub = formula" sequence definition — a_n = 5+3(n-1), the
+   natural way to write a sequence's general term — from a line, the same way
+   funcDefHead matches "name(param) = formula". Only counts as a sequence when
+   the subscript is a genuine variable (a letter — a_1 = 5 is an ordinary
+   indexed constant, not a formula) that's actually used in the formula
+   (a_n = 5 alone isn't parametrized by n, it's just a value named "a_n"). */
+function seqDefHead(line) {
+  const mq = line._mq;
+  const latex = mq ? mq.latex() : '';
+  if (!latex) return null;
+  const m = latex.match(/^([a-zA-Z])_(?:\{([a-zA-Z]\w*)\}|([a-zA-Z]))\s*=(?!=)\s*(.+)$/);
+  if (!m) return null;
+  const name = m[1], sub = m[2] || m[3];
+  if (BUILTINS.has(name)) return null;
+  let rhsExpr;
+  try { rhsExpr = latexToExpr(m[4], complexMode); } catch { return null; }
+  if (!rhsExpr || !findUnknowns(rhsExpr).includes(sub)) return null;
+  return { name, sub, rhsExpr };
+}
+
 function evaluateAll() {
   try { nerdamer.clearVars(); } catch {}
   numScope = {}; varNames = new Set(); knownVars = new Map(); primaryDefLine = new Map(); primaryFuncDefLine = new Map();
@@ -1044,6 +1064,8 @@ function evaluateAll() {
   linesArr.forEach(line => {
     const m = funcDefHead(line);
     if (m) knownFunctionNames.add(m[1]);
+    const sq = seqDefHead(line);
+    if (sq) knownFunctionNames.add(sq.name);
   });
 
   // Same "first line owns it" rule as plain variables (below): a later
@@ -1403,6 +1425,12 @@ function evalExpr(expr, line) {
     return defineFunction(fdef[1], fdef[2], fdef[3]);
   }
 
+  // Sequence definition:  a_n = <formula using n> — the natural way to write
+  // a sequence's general term, same idea as f(x) = ... but with subscript
+  // notation instead of parentheses.
+  const seq = seqDefHead(line);
+  if (seq) return defineSequence(seq.name, seq.sub, seq.rhsExpr);
+
   // Assignment:  <name> = <value>
   const asgn = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
   if (asgn && !/[+\-*/^]/.test(asgn[1])) {
@@ -1527,6 +1555,62 @@ function defineFunction(name, paramStr, rhs) {
   const paramsTex = params.map(dispTeX).join(',\\ ');
   knownVars.set(name, { text: rhsText, tex: rhsTex, label: `${disp(name)}(${paramsText})`, labelTex: `${dispTeX(name)}(${paramsTex})` });
   return { tex: `${dispTeX(name)}(${paramsTex}) = ${rhsTex}`, text: `${disp(name)}(${paramsText}) = ${rhsText}`, cls: 'sym' };
+}
+
+/* Is a_n = <rhsExpr> arithmetic (a(n+1)-a(n) is a constant) or geometric
+   (a(n+1)/a(n) is a constant)? Uses symbolic differencing/ratio rather than
+   pattern-matching a specific shape, so it also catches forms like
+   5+3*(n-1) (expands to a constant difference) that don't look like "d*n+c"
+   or "c*r^n" on their face. Returns null if it's neither. */
+function classifySequence(rhsExpr, sub) {
+  freeVar(sub); nerdExact();
+  let next;
+  try { next = nerdamer(rhsExpr).sub(sub, `(${sub}+1)`).toString(); } catch { return null; }
+  nerdExact();
+  try {
+    const diff = nerdamer(`(${next})-(${rhsExpr})`).expand().toString();
+    nerdExact();
+    const dd = disp(diff);
+    if (diff && !findUnknowns(dd).includes(sub)) {
+      const d = Number(math.evaluate(dd, numScope));
+      if (isFinite(d)) return { kind: 'arithmetic', value: d };
+    }
+  } catch { nerdExact(); }
+  try {
+    // Plain division (not .simplify() — which can throw on an already-fully-
+    // reduced ratio like two exponentials collapsing to a bare integer)
+    // already collapses a genuine geometric ratio down to a constant.
+    const ratio = nerdamer(`(${next})/(${rhsExpr})`).toString();
+    nerdExact();
+    const rd = disp(ratio);
+    if (ratio && !findUnknowns(rd).includes(sub)) {
+      const r = Number(math.evaluate(rd, numScope));
+      if (isFinite(r)) return { kind: 'geometric', value: r };
+    }
+  } catch { nerdExact(); }
+  return null;
+}
+
+/* a_n = 5+3(n-1) — the natural way to write a sequence's general term.
+   Recognized the same way f(x) = ... is (see funcDefHead/knownFunctionNames),
+   just via subscript notation instead of parentheses — reuses defineFunction
+   for the actual registration (so a(5) works as a call right away), and adds
+   an arithmetic/geometric classification when the formula fits one of those
+   shapes. */
+function defineSequence(name, sub, rhsExpr) {
+  const out = defineFunction(name, sub, rhsExpr);
+  if (out.cls === 'err') return out;
+  const info = classifySequence(rhsExpr, sub);
+  if (info) {
+    const label = info.kind === 'arithmetic'
+      ? `arithmetic, common difference ${fmtNum(info.value)}`
+      : `geometric, common ratio ${fmtNum(info.value)}`;
+    out.tex = `${out.tex} \\ \\text{(${label})}`;
+    out.text = `${out.text}   (${label})`;
+    const known = knownVars.get(name);
+    if (known) { known.tex = out.tex; known.text = out.text; }
+  }
+  return out;
 }
 
 function solveEquation(expr) {
