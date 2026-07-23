@@ -313,7 +313,13 @@
     #toast.show { opacity:1; }
 
     @media (max-width:600px){ .lresult{ max-width:150px; } }
-    body.tab-logic .algebra-only { display: none; }
+    /* visibility, not display:none — this box is now FIRST in the header, so
+       collapsing it out of flow would shift Real/Complex and the tab switcher
+       after it on every tab change (very visible on mobile, where each
+       mode-toggle wraps to its own row). visibility:hidden keeps its slot
+       reserved so nothing downstream moves, while still being invisible and
+       non-interactive. */
+    body.tab-logic .algebra-only { visibility: hidden; }
     .kb-complex-domain { display: none; }
     body.mode-complex .kb-complex-domain { display: inline-block; }
   </style>
