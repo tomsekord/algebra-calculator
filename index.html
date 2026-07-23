@@ -244,6 +244,14 @@
       color:#fff; border-color:transparent; font-weight:600; font-size:.9rem;
     }
     .kb.enter:hover { filter:brightness(1.1); }
+    /* Mobile long-press tooltip — native `title` only shows on hover, which
+       touch devices don't have, so a held tap surfaces the same text here. */
+    .kb-tooltip-bubble {
+      position:fixed; z-index:999; max-width:220px; padding:7px 11px;
+      background:var(--surface2, #26264a); color:var(--text); border:1px solid var(--border);
+      border-radius:8px; font-size:.8rem; line-height:1.3; box-shadow:0 6px 20px rgba(0,0,0,.35);
+      pointer-events:none;
+    }
     @media (max-width:560px) {
       .kb-desmos { flex-direction:column; gap:8px; }
       .kb-grid { flex-basis:auto; }
@@ -305,6 +313,24 @@
     .pal-item .pal-name { font-size:.68rem; color:var(--dim); }
     .pal-item:hover .pal-name { color:#eee; }
 
+    /* ── Guided tour modal ── */
+    .tour-modal { max-width:480px; }
+    .tour-step-eyebrow { font-size:.66rem; text-transform:uppercase; letter-spacing:.9px; color:var(--accent-l); margin-bottom:6px; }
+    .tour-step-body { font-size:.92rem; line-height:1.55; color:var(--text); }
+    .tour-step-body code {
+      background:var(--card); border:1px solid var(--border); border-radius:5px;
+      padding:1px 6px; font-family:'Cambria Math','Cambria',serif; color:var(--gold);
+    }
+    .tour-dots { display:flex; justify-content:center; gap:6px; margin:18px 0 4px; }
+    .tour-dot { width:7px; height:7px; border-radius:50%; background:var(--border); transition:background .15s; }
+    .tour-dot.active { background:var(--accent); }
+    .tour-nav { display:flex; justify-content:space-between; align-items:center; margin-top:14px; }
+    .tour-nav-right { display:flex; gap:8px; }
+    .tour-next { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .tour-next:hover { filter:brightness(1.1); }
+    #tourBackBtn:disabled { opacity:.35; cursor:default; }
+    #tourBackBtn:disabled:hover { background:var(--card); border-color:var(--border); }
+
     #toast {
       position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
       background:var(--accent); color:#fff; padding:8px 20px; border-radius:8px;
@@ -351,6 +377,7 @@
       <button id="tabLogic" onclick="setTab('logic')">⊨ Logic</button>
     </div>
     <button class="btn" onclick="clearAll()">Clear</button>
+    <button class="btn" onclick="openTour()" title="Take a quick tour of the features">?</button>
   </div>
 </header>
 
@@ -384,69 +411,69 @@
       <div class="kb-section-label">Keypad</div>
       <div class="kb-desmos">
         <div class="kb-grid kb-grid-misc">
-          <button class="kb op" onclick="K.pow2()">x²</button>
-          <button class="kb op" onclick="K.cmd('^')">xʸ</button>
-          <button class="kb op" onclick="K.cmd('\\sqrt')">√</button>
-          <button class="kb op" onclick="K.nthroot()">ⁿ√</button>
+          <button class="kb op" onclick="K.pow2()" title="Square — raise to the power of 2">x²</button>
+          <button class="kb op" onclick="K.cmd('^')" title="Exponent — raise to any power">xʸ</button>
+          <button class="kb op" onclick="K.cmd('\\sqrt')" title="Square root">√</button>
+          <button class="kb op" onclick="K.nthroot()" title="Nth root — e.g. cube root, 4th root, ...">ⁿ√</button>
 
-          <button class="kb op" onclick="K.type('(')">(</button>
-          <button class="kb op" onclick="K.type(')')">)</button>
+          <button class="kb op" onclick="K.type('(')" title="Open parenthesis — groups part of an expression">(</button>
+          <button class="kb op" onclick="K.type(')')" title="Close parenthesis">)</button>
           <button class="kb op" onclick="K.type('[')" title="List — e.g. [1,2,3]">[</button>
           <button class="kb op" onclick="K.type(']')" title="List — e.g. [1,2,3]">]</button>
-          <button class="kb op" onclick="K.cmd('\\frac')"><span class="kb-frac"><span>a</span><span class="kb-frac-bar"></span><span>b</span></span></button>
-          <button class="kb op" onclick="K.abs()">|x|</button>
+          <button class="kb op" onclick="K.cmd('\\frac')" title="Fraction"><span class="kb-frac"><span>a</span><span class="kb-frac-bar"></span><span>b</span></span></button>
+          <button class="kb op" onclick="K.abs()" title="Absolute value">|x|</button>
 
-          <button class="kb op" onclick="K.type('pi')">π</button>
-          <button class="kb op" onclick="K.type('e')">e</button>
-          <button class="kb var" onclick="K.cmd('\\theta')">θ</button>
-          <button class="kb del" onclick="K.backspace()">⌫</button>
+          <button class="kb op" onclick="K.type('pi')" title="Pi ≈ 3.14159">π</button>
+          <button class="kb op" onclick="K.type('e')" title="Euler's number ≈ 2.71828">e</button>
+          <button class="kb var" onclick="K.cmd('\\theta')" title="Theta — commonly used for angles">θ</button>
+          <button class="kb del" onclick="K.backspace()" title="Backspace — delete the last character">⌫</button>
 
           <button class="kb op kb-half" onclick="K.cmd('\\pm')" title="Plus/minus — e.g. (-b±√disc)/(2a)">±</button>
           <button class="kb op kb-half" onclick="K.cmd('\\infty')" title="Infinity — e.g. for limits as x→∞">∞</button>
         </div>
 
         <div class="kb-grid kb-grid-num">
-          <button class="kb num" onclick="K.type('7')">7</button>
-          <button class="kb num" onclick="K.type('8')">8</button>
-          <button class="kb num" onclick="K.type('9')">9</button>
-          <button class="kb op"  onclick="K.type('/')">÷</button>
+          <button class="kb num" onclick="K.type('7')" title="Digit 7">7</button>
+          <button class="kb num" onclick="K.type('8')" title="Digit 8">8</button>
+          <button class="kb num" onclick="K.type('9')" title="Digit 9">9</button>
+          <button class="kb op"  onclick="K.type('/')" title="Divide">÷</button>
 
-          <button class="kb num" onclick="K.type('4')">4</button>
-          <button class="kb num" onclick="K.type('5')">5</button>
-          <button class="kb num" onclick="K.type('6')">6</button>
-          <button class="kb op"  onclick="K.type('*')">×</button>
+          <button class="kb num" onclick="K.type('4')" title="Digit 4">4</button>
+          <button class="kb num" onclick="K.type('5')" title="Digit 5">5</button>
+          <button class="kb num" onclick="K.type('6')" title="Digit 6">6</button>
+          <button class="kb op"  onclick="K.type('*')" title="Multiply">×</button>
 
-          <button class="kb num" onclick="K.type('1')">1</button>
-          <button class="kb num" onclick="K.type('2')">2</button>
-          <button class="kb num" onclick="K.type('3')">3</button>
-          <button class="kb op"  onclick="K.type('-')">−</button>
+          <button class="kb num" onclick="K.type('1')" title="Digit 1">1</button>
+          <button class="kb num" onclick="K.type('2')" title="Digit 2">2</button>
+          <button class="kb num" onclick="K.type('3')" title="Digit 3">3</button>
+          <button class="kb op"  onclick="K.type('-')" title="Subtract">−</button>
 
-          <button class="kb num" onclick="K.type('0')">0</button>
-          <button class="kb num" onclick="K.type('.')">.</button>
-          <button class="kb op"  onclick="K.type('=')">=</button>
-          <button class="kb op"  onclick="K.type('+')">+</button>
+          <button class="kb num" onclick="K.type('0')" title="Digit 0">0</button>
+          <button class="kb num" onclick="K.type('.')" title="Decimal point">.</button>
+          <button class="kb op"  onclick="K.type('=')" title="Equals — for equations (2x=4) or assignments (x=4)">=</button>
+          <button class="kb op"  onclick="K.type('+')" title="Add">+</button>
         </div>
 
         <div class="kb-side">
           <div class="kb-side-nav">
-            <button class="kb" onclick="K.left()">←</button>
-            <button class="kb" onclick="K.right()">→</button>
+            <button class="kb" onclick="K.left()" title="Move cursor left">←</button>
+            <button class="kb" onclick="K.right()" title="Move cursor right">→</button>
           </div>
-          <button class="kb enter" onclick="K.enter()">⏎ Enter</button>
+          <button class="kb enter" onclick="K.enter()" title="Start a new line">⏎ Enter</button>
         </div>
       </div>
 
       <div class="kb-section-label">Functions</div>
       <div class="kb-row">
-        <button class="kb fn" onclick="K.fn('sin')">sin</button>
-        <button class="kb fn" onclick="K.fn('cos')">cos</button>
-        <button class="kb fn" onclick="K.fn('tan')">tan</button>
-        <button class="kb fn" onclick="K.fn('ln')">ln</button>
-        <button class="kb fn" onclick="K.log10()">log</button>
-        <button class="kb fn" onclick="K.logBase()">log_b</button>
-        <button class="kb fn" onclick="K.type('factorial(')">n!</button>
+        <button class="kb fn" onclick="K.fn('sin')" title="Sine function">sin</button>
+        <button class="kb fn" onclick="K.fn('cos')" title="Cosine function">cos</button>
+        <button class="kb fn" onclick="K.fn('tan')" title="Tangent function">tan</button>
+        <button class="kb fn" onclick="K.fn('ln')" title="Natural logarithm (base e)">ln</button>
+        <button class="kb fn" onclick="K.log10()" title="Logarithm, base 10">log</button>
+        <button class="kb fn" onclick="K.logBase()" title="Logarithm with a custom base">log_b</button>
+        <button class="kb fn" onclick="K.type('factorial(')" title="Factorial — e.g. 5! = 120">n!</button>
         <div class="kb-sep"></div>
-        <button class="kb special" onclick="openPalette()">∑ &nbsp;More functions…</button>
+        <button class="kb special" onclick="openPalette()" title="Open the full list of functions (trig, calculus, and more)">∑ &nbsp;More functions…</button>
       </div>
 
       <div class="kb-section-label">Number theory</div>
@@ -465,11 +492,11 @@
       <div class="kb-section-label">Letters &amp; symbols</div>
       <div id="qwerty"></div>
       <div class="kb-row" style="margin-top:6px">
-        <button class="kb var" onclick="K.cmd('\\alpha')">α</button>
-        <button class="kb var" onclick="K.cmd('\\beta')">β</button>
-        <button class="kb var" onclick="K.cmd('\\lambda')">λ</button>
-        <button class="kb var" onclick="K.cmd('\\mu')">μ</button>
-        <button class="kb var" onclick="K.cmd('\\omega')">ω</button>
+        <button class="kb var" onclick="K.cmd('\\alpha')" title="Alpha — a Greek letter, usable as a variable">α</button>
+        <button class="kb var" onclick="K.cmd('\\beta')" title="Beta — a Greek letter, usable as a variable">β</button>
+        <button class="kb var" onclick="K.cmd('\\lambda')" title="Lambda — a Greek letter, usable as a variable">λ</button>
+        <button class="kb var" onclick="K.cmd('\\mu')" title="Mu — a Greek letter, usable as a variable">μ</button>
+        <button class="kb var" onclick="K.cmd('\\omega')" title="Omega — a Greek letter, usable as a variable">ω</button>
       </div>
 
     </div>
@@ -532,49 +559,49 @@
 
       <div class="kb-section-label">Values &amp; comparisons</div>
       <div class="kb-row">
-        <button class="kb special" onclick="LK.type('True')">True</button>
-        <button class="kb special" onclick="LK.type('False')">False</button>
-        <button class="kb op" onclick="LK.type('=')">=</button>
-        <button class="kb op" onclick="LK.cmd('\\neq')">≠</button>
-        <button class="kb op" onclick="LK.type('<')"><</button>
-        <button class="kb op" onclick="LK.type('>')">></button>
-        <button class="kb op" onclick="LK.cmd('\\le')">≤</button>
-        <button class="kb op" onclick="LK.cmd('\\ge')">≥</button>
-        <button class="kb del" onclick="LK.backspace()">⌫</button>
+        <button class="kb special" onclick="LK.type('True')" title="The literal value True">True</button>
+        <button class="kb special" onclick="LK.type('False')" title="The literal value False">False</button>
+        <button class="kb op" onclick="LK.type('=')" title="Equals — used in comparisons (5=5) and assignments (A=True)">=</button>
+        <button class="kb op" onclick="LK.cmd('\\neq')" title="Not equal to">≠</button>
+        <button class="kb op" onclick="LK.type('<')" title="Less than"><</button>
+        <button class="kb op" onclick="LK.type('>')" title="Greater than">></button>
+        <button class="kb op" onclick="LK.cmd('\\le')" title="Less than or equal to">≤</button>
+        <button class="kb op" onclick="LK.cmd('\\ge')" title="Greater than or equal to">≥</button>
+        <button class="kb del" onclick="LK.backspace()" title="Backspace — delete the last character">⌫</button>
       </div>
 
       <div class="kb-section-label">Numbers &amp; algebra</div>
       <div class="kb-row">
-        <button class="kb num" onclick="LK.type('7')">7</button>
-        <button class="kb num" onclick="LK.type('8')">8</button>
-        <button class="kb num" onclick="LK.type('9')">9</button>
-        <button class="kb num" onclick="LK.type('4')">4</button>
-        <button class="kb num" onclick="LK.type('5')">5</button>
-        <button class="kb num" onclick="LK.type('6')">6</button>
-        <button class="kb num" onclick="LK.type('1')">1</button>
-        <button class="kb num" onclick="LK.type('2')">2</button>
-        <button class="kb num" onclick="LK.type('3')">3</button>
-        <button class="kb num" onclick="LK.type('0')">0</button>
-        <button class="kb op" onclick="LK.type('.')">.</button>
+        <button class="kb num" onclick="LK.type('7')" title="Digit 7">7</button>
+        <button class="kb num" onclick="LK.type('8')" title="Digit 8">8</button>
+        <button class="kb num" onclick="LK.type('9')" title="Digit 9">9</button>
+        <button class="kb num" onclick="LK.type('4')" title="Digit 4">4</button>
+        <button class="kb num" onclick="LK.type('5')" title="Digit 5">5</button>
+        <button class="kb num" onclick="LK.type('6')" title="Digit 6">6</button>
+        <button class="kb num" onclick="LK.type('1')" title="Digit 1">1</button>
+        <button class="kb num" onclick="LK.type('2')" title="Digit 2">2</button>
+        <button class="kb num" onclick="LK.type('3')" title="Digit 3">3</button>
+        <button class="kb num" onclick="LK.type('0')" title="Digit 0">0</button>
+        <button class="kb op" onclick="LK.type('.')" title="Decimal point">.</button>
         <div class="kb-sep"></div>
-        <button class="kb op" onclick="LK.type('+')">+</button>
-        <button class="kb op" onclick="LK.type('-')">−</button>
-        <button class="kb op" onclick="LK.type('*')">×</button>
-        <button class="kb op" onclick="LK.type('/')">÷</button>
+        <button class="kb op" onclick="LK.type('+')" title="Add">+</button>
+        <button class="kb op" onclick="LK.type('-')" title="Subtract">−</button>
+        <button class="kb op" onclick="LK.type('*')" title="Multiply">×</button>
+        <button class="kb op" onclick="LK.type('/')" title="Divide">÷</button>
         <button class="kb op" onclick="LK.cmd('^')" title="Power">xʸ</button>
-        <button class="kb op" onclick="LK.type('(')">(</button>
-        <button class="kb op" onclick="LK.type(')')">)</button>
+        <button class="kb op" onclick="LK.type('(')" title="Open parenthesis">(</button>
+        <button class="kb op" onclick="LK.type(')')" title="Close parenthesis">)</button>
         <button class="kb op" onclick="LK.type(',')" title="Separate list values, e.g. L={1,2,3}">,</button>
       </div>
 
       <div class="kb-section-label">Functions — for use inside a comparison, e.g. sin(x)=2</div>
       <div class="kb-row">
-        <button class="kb fn" onclick="LK.type('sin(')">sin</button>
-        <button class="kb fn" onclick="LK.type('cos(')">cos</button>
-        <button class="kb fn" onclick="LK.type('tan(')">tan</button>
-        <button class="kb fn" onclick="LK.type('ln(')">ln</button>
-        <button class="kb op" onclick="LK.cmd('\\sqrt')">√</button>
-        <button class="kb op" onclick="LK.cmd('\\pi')">π</button>
+        <button class="kb fn" onclick="LK.type('sin(')" title="Sine function">sin</button>
+        <button class="kb fn" onclick="LK.type('cos(')" title="Cosine function">cos</button>
+        <button class="kb fn" onclick="LK.type('tan(')" title="Tangent function">tan</button>
+        <button class="kb fn" onclick="LK.type('ln(')" title="Natural logarithm (base e)">ln</button>
+        <button class="kb op" onclick="LK.cmd('\\sqrt')" title="Square root">√</button>
+        <button class="kb op" onclick="LK.cmd('\\pi')" title="Pi ≈ 3.14159">π</button>
       </div>
 
       <div class="kb-section-label">Uppercase letters — propositions (A=True, ...)</div>
@@ -584,10 +611,10 @@
       <div class="kb-row" id="logicLettersLower"></div>
 
       <div class="kb-row" style="margin-top:6px">
-        <button class="kb" onclick="LK.left()">←</button>
-        <button class="kb" onclick="LK.right()">→</button>
+        <button class="kb" onclick="LK.left()" title="Move cursor left">←</button>
+        <button class="kb" onclick="LK.right()" title="Move cursor right">→</button>
         <div class="kb-sep"></div>
-        <button class="kb enter" onclick="LK.enter()">⏎ Enter</button>
+        <button class="kb enter" onclick="LK.enter()" title="Start a new line">⏎ Enter</button>
       </div>
 
     </div>
@@ -603,6 +630,27 @@
       <button class="modal-close" onclick="closePalette()">✕</button>
     </div>
     <div class="modal-body" id="paletteBody"><!-- filled by JS --></div>
+  </div>
+</div>
+
+<!-- ── Guided tour modal ── -->
+<div class="modal-overlay" id="tourModal" onclick="if(event.target===this)closeTour()">
+  <div class="modal tour-modal">
+    <div class="modal-hdr">
+      <h2 id="tourTitle">Tour</h2>
+      <button class="modal-close" onclick="closeTour()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="tourBody"><!-- filled by JS --></div>
+      <div class="tour-dots" id="tourDots"><!-- filled by JS --></div>
+      <div class="tour-nav">
+        <button class="btn" id="tourSkipBtn" onclick="closeTour()">Skip</button>
+        <div class="tour-nav-right">
+          <button class="btn" id="tourBackBtn" onclick="tourBack()">Back</button>
+          <button class="btn tour-next" id="tourNextBtn" onclick="tourNext()">Next</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1099,32 +1147,32 @@ function flashKeypad() {
 function buildQwerty() {
   const host = document.getElementById('qwerty');
   if (!host) return;
-  const letters = ch => `<button class="kb var" onclick="pressLetter('${ch}')">${kbShift ? ch.toUpperCase() : ch}</button>`;
+  const letters = ch => `<button class="kb var" onclick="pressLetter('${ch}')" title="Type the letter ${ch}">${kbShift ? ch.toUpperCase() : ch}</button>`;
   const row1 = 'qwertyuiop'.split('').map(letters).join('');
   const row2 = 'asdfghjkl'.split('').map(letters).join('') +
                (kbShift
                  ? `<button class="kb var" onclick="pressShifted('\\\\tau')" title="tau (2π)">τ</button>`
-                 : `<button class="kb var" onclick="K.cmd('\\\\theta')">θ</button>`);
-  const row3 = `<button class="kb mod ${kbShift ? 'active' : ''}" onclick="toggleShift()">⬆</button>` +
+                 : `<button class="kb var" onclick="K.cmd('\\\\theta')" title="Theta — commonly used for angles">θ</button>`);
+  const row3 = `<button class="kb mod ${kbShift ? 'active' : ''}" onclick="toggleShift()" title="Shift — capitalize the next letter">⬆</button>` +
                'zxcvbnm'.split('').map(letters).join('') +
-               `<button class="kb del" onclick="K.backspace()">⌫</button>`;
-  const row4 = `<button class="kb mod" onclick="flashKeypad()">123</button>` +
+               `<button class="kb del" onclick="K.backspace()" title="Backspace — delete the last character">⌫</button>`;
+  const row4 = `<button class="kb mod" onclick="flashKeypad()" title="Switch to the number keypad">123</button>` +
                (kbShift
                  ? `<button class="kb op" onclick="pressShifted('^')" title="Superscript (power)">a<sup>b</sup></button>`
                  : `<button class="kb op" onclick="K.cmd('_')" title="Subscript">a<sub>b</sub></button>`) +
-               `<button class="kb op" onclick="K.type('!')">!</button>` +
-               `<button class="kb op" onclick="K.type('%')">%</button>` +
-               `<button class="kb op" onclick="K.type('[')">[</button>` +
-               `<button class="kb op" onclick="K.type(']')">]</button>` +
-               `<button class="kb op" onclick="K.type('{')">{</button>` +
-               `<button class="kb op" onclick="K.type('}')">}</button>` +
-               `<button class="kb op" onclick="K.type('~')">~</button>` +
-               `<button class="kb op" onclick="K.type(':')">:</button>` +
+               `<button class="kb op" onclick="K.type('!')" title="Factorial — e.g. 5! = 120">!</button>` +
+               `<button class="kb op" onclick="K.type('%')" title="Percent — divides by 100">%</button>` +
+               `<button class="kb op" onclick="K.type('[')" title="List — e.g. [1,2,3]">[</button>` +
+               `<button class="kb op" onclick="K.type(']')" title="List — e.g. [1,2,3]">]</button>` +
+               `<button class="kb op" onclick="K.type('{')" title="Grouping — treated the same as parentheses">{</button>` +
+               `<button class="kb op" onclick="K.type('}')" title="Grouping — treated the same as parentheses">}</button>` +
+               `<button class="kb op" onclick="K.type('~')" title="Not used for calculations in this Algebra tab">~</button>` +
+               `<button class="kb op" onclick="K.type(':')" title="Not used for calculations in this Algebra tab">:</button>` +
                `<button class="kb op" onclick="K.cmd('\\le')" title="Less than or equal to">≤</button>` +
                `<button class="kb op" onclick="K.cmd('\\ge')" title="Greater than or equal to">≥</button>` +
                `<button class="kb op" onclick="K.type(',')" title="Separate an equation from a domain, e.g. sin(x)=0.5, 0≤x≤2π">,</button>` +
                `<button class="kb op" onclick="K.type('\\'')" title="Derivative prime">'</button>` +
-               `<button class="kb enter" onclick="K.enter()">↵</button>`;
+               `<button class="kb enter" onclick="K.enter()" title="Start a new line">↵</button>`;
   host.innerHTML =
     `<div class="kb-qrow">${row1}</div>` +
     `<div class="kb-qrow">${row2}</div>` +
@@ -1205,6 +1253,53 @@ function buildPalette() {
 }
 function openPalette()  { document.getElementById('palette').classList.add('show'); }
 function closePalette() { document.getElementById('palette').classList.remove('show'); if (activeMQ) activeMQ.focus(); }
+
+/* ============================================================
+   Guided tour — a first-time walkthrough of the main features,
+   reopenable any time from the "?" button. Each step can name a `tab` to
+   switch to before showing itself, so the tour actually shows what it's
+   describing instead of just talking about it.
+============================================================ */
+const TOUR = [
+  { tab: 'algebra', title: 'Welcome', body: `This calculator has two modes: <b>Algebra</b>, for solving equations and computing expressions, and <b>Logic</b>, for evaluating True/False statements. This tour covers the essentials of both — <b>Next</b> to continue, <b>Skip</b> any time.` },
+  { tab: 'algebra', title: 'Multi-line input', body: `Type any expression or equation, then press <b>Enter</b> for a new line. Every line solves on its own — try typing <code>2x+3=7</code>.` },
+  { tab: 'algebra', title: 'The Variables panel', body: `When a line has one clear answer, it moves into the <b>Variables</b> panel on the left instead of cluttering the line — so later lines can reuse it automatically.` },
+  { tab: 'algebra', title: 'Exact vs. Decimal', body: `<b>√ Exact</b> keeps answers like √3 symbolic. <b>≈ Decimal</b> shows 1.732050808 instead. Toggle it any time in the header.` },
+  { tab: 'algebra', title: 'Real vs. Complex', body: `In <b>ℝ Real</b> mode, <code>i</code> is just an ordinary variable and √(−1) is undefined. Switch to <b>ℂ Complex</b> to make <code>i</code> the imaginary unit.` },
+  { tab: 'algebra', title: 'The keyboard', body: `Covers common functions, number theory (gcd, mod, nCr, ...), and a full list under <b>∑ More functions…</b>. Hover — or long-press on a phone — any key to see what it does.` },
+  { tab: 'algebra', title: 'Domain-restricted equations', body: `Add a condition after a comma to check whether a solution exists in that range, instead of solving for one: <code>sin(x)=0.5, 0≤x≤2π</code>` },
+  { tab: 'logic', title: 'The Logic tab', body: `Logic evaluates statements to <b>True</b> or <b>False</b> instead of solving them — <code>5=5</code> is True. It never does plain arithmetic the way Algebra does.` },
+  { tab: 'logic', title: 'Propositions', body: `Give a letter a truth value with <code>A=True</code>, then combine them: <code>A∧B</code>, <code>¬A∨B</code>, and so on. Typing the words <b>and</b>, <b>or</b>, <b>not</b>, <b>xor</b>, <b>implies</b>, <b>iff</b> also auto-converts to the symbol.` },
+  { tab: 'logic', title: 'Quantifiers & domains', body: `<code>∃x(x>5)</code> searches for a value that works. Restrict the search with <code>∃n∈ℕ(...)</code>, <code>∈ℤ</code>, or your own list — define <code>L={1,2,3}</code> first, then use <code>∈L</code>.` },
+  { tab: 'logic', title: 'Membership tests', body: `Check membership directly, too — <code>5∈ℕ</code> evaluates straight to True, no quantifier needed.` },
+  { tab: 'algebra', title: 'That’s the tour', body: `Reopen this any time from the <b>?</b> button in the header. Happy calculating!` },
+];
+let tourIdx = 0;
+
+function openTour() {
+  tourIdx = 0;
+  renderTourStep();
+  document.getElementById('tourModal').classList.add('show');
+}
+function closeTour() {
+  document.getElementById('tourModal').classList.remove('show');
+  if (activeMQ) activeMQ.focus();
+}
+function tourNext() { if (tourIdx < TOUR.length - 1) { tourIdx++; renderTourStep(); } else closeTour(); }
+function tourBack() { if (tourIdx > 0) { tourIdx--; renderTourStep(); } }
+function renderTourStep() {
+  const step = TOUR[tourIdx];
+  if (step.tab && step.tab !== currentTab) setTab(step.tab);
+  document.getElementById('tourTitle').textContent = `${tourIdx + 1} / ${TOUR.length}`;
+  document.getElementById('tourBody').innerHTML =
+    `<div class="tour-step-eyebrow">${step.tab === 'logic' ? 'Logic' : 'Algebra'}</div>` +
+    `<h3 style="margin-bottom:8px">${step.title}</h3>` +
+    `<div class="tour-step-body">${step.body}</div>`;
+  document.getElementById('tourDots').innerHTML = TOUR.map((_, i) =>
+    `<span class="tour-dot${i === tourIdx ? ' active' : ''}"></span>`).join('');
+  document.getElementById('tourBackBtn').disabled = tourIdx === 0;
+  document.getElementById('tourNextBtn').textContent = tourIdx === TOUR.length - 1 ? 'Done' : 'Next';
+}
 
 /* ============================================================
    Evaluation
@@ -3572,12 +3667,12 @@ function buildLogicLetters() {
   const lower = document.getElementById('logicLettersLower');
   if (upper) {
     let html = '';
-    for (const ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') html += `<button class="kb var" onclick="LK.type('${ch}')">${ch}</button>`;
+    for (const ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') html += `<button class="kb var" onclick="LK.type('${ch}')" title="Proposition ${ch} — give it a value with ${ch}=True or ${ch}=False">${ch}</button>`;
     upper.innerHTML = html;
   }
   if (lower) {
     let html = '';
-    for (const ch of 'abcdefghijklmnopqrstuvwxyz') html += `<button class="kb var" onclick="LK.type('${ch}')">${ch}</button>`;
+    for (const ch of 'abcdefghijklmnopqrstuvwxyz') html += `<button class="kb var" onclick="LK.type('${ch}')" title="Type the variable ${ch}">${ch}</button>`;
     lower.innerHTML = html;
   }
 }
@@ -3694,6 +3789,34 @@ function logicNormalizeLatex(latex) {
     .replace(/\\,/g, ' ').replace(/\\!/g, '').replace(/\\;/g, ' ').replace(/\\ /g, ' ');
 }
 
+/* Error messages sometimes echo back a piece of what the user typed (an
+   operand that turned out not to be a full statement, a quantifier's body,
+   ...) — but that piece is still raw LaTeX at that point ("\frac{\pi}{2}"),
+   and error text is shown as plain text, not run through KaTeX. Route it
+   through the SAME latexToExpr conversion Algebra uses (→ "(pi/2)") so it
+   reads as text instead of leaking backslash commands, falling back to the
+   original fragment if it doesn't parse as an expression at all. */
+function logicPrettySnippet(raw) {
+  try {
+    const e = latexToExpr(raw, complexMode);
+    if (e && e.trim()) return e.replace(/\bpi\b/g, 'π');
+  } catch {}
+  return raw;
+}
+
+/* Evaluate a comparison/membership operand to a plain number. Algebra
+   legitimately wants a bare "e" to mean Euler's number (e^x, ln(e), ...) —
+   but Logic has no such convention, and "e" reads far more naturally there
+   as an ordinary one-letter name (like the classic p, q, x, n) that just
+   hasn't been given a value. math.evaluate resolves "e" to 2.718... on its
+   own regardless of scope, so it's aliased to an unresolvable name first,
+   turning it into the same "undefined symbol" failure any other unassigned
+   letter would produce, instead of silently succeeding as a math constant. */
+function logicEvalArith(latex) {
+  const expr = latexToExpr(latex, false).replace(/\be\b/g, 'eLogicUnbound');
+  return math.evaluate(expr, {});
+}
+
 /* A relational comparison ("5=5", the "x>5" inside a quantifier body, ...) is
    scanned as a maximal run of arithmetic-safe characters (letters, digits,
    + - * / ^ . and balanced parens/braces) containing a top-level relational
@@ -3759,7 +3882,12 @@ function logicTokenize(rawLatex) {
     if (s[i] === '(') { const span = readParenSpan(); bodyInner = span.slice(1, -1); }
     else if (s[i] === ':') { i++; skipSpace(); bodyInner = s.slice(i).trim(); i = s.length; }
     const display = `${sym}${boundVar}${domain ? '∈' + domain : ''}(${bodyInner})`;
-    return { t: 'QUANT', key: display.replace(/\s+/g, ''), display, sym, boundVar, domain, bodyInner };
+    // display is also used as a scope-lookup key (an assignment line like
+    // "∃x(x>5)=True" must match it exactly), so it keeps the raw bodyInner —
+    // prettyDisplay is a separate, LaTeX-free copy purely for error messages.
+    const prettyBody = bodyInner ? logicPrettySnippet(bodyInner) : bodyInner;
+    const prettyDisplay = `${sym}${boundVar}${domain ? '∈' + domain : ''}(${prettyBody})`;
+    return { t: 'QUANT', key: display.replace(/\s+/g, ''), display, prettyDisplay, sym, boundVar, domain, bodyInner };
   }
 
   function tryReadOperand(from) {
@@ -3845,7 +3973,7 @@ function logicTokenize(rawLatex) {
       // its own (not a True/False statement without comparing it to something).
       const cmp = tryReadComparison();
       if (cmp) { tokens.push(cmp); continue; }
-      throw new Error(`A formula by itself isn't True/False — did you mean to compare it with something, like ${s.slice(i, tryReadOperand(i))}=2?`);
+      throw new Error(`A formula by itself isn't True/False — did you mean to compare it with something, like ${logicPrettySnippet(s.slice(i, tryReadOperand(i)))}=2?`);
     }
     throw new Error(`I don't know what to do with "${c}" here — Logic mode evaluates True/False statements (comparisons, and connectives like ∧ ∨ ¬ → ↔), not plain arithmetic.`);
   }
@@ -3870,7 +3998,7 @@ function logicParseTokens(tokens) {
     if (tok.t === 'LIT') { advance(); return { op: 'lit', value: tok.value }; }
     if (tok.t === 'QUANT') {
       advance();
-      return { op: 'quant', key: tok.key, display: tok.display, sym: tok.sym, boundVar: tok.boundVar, domain: tok.domain, bodyInner: tok.bodyInner };
+      return { op: 'quant', key: tok.key, display: tok.display, prettyDisplay: tok.prettyDisplay, sym: tok.sym, boundVar: tok.boundVar, domain: tok.domain, bodyInner: tok.bodyInner };
     }
     if (tok.t === 'CMP') { advance(); return { op: 'cmp', left: tok.left, cmp: tok.op, right: tok.right }; }
     if (tok.t === 'IDENT') { advance(); return { op: 'var', name: tok.name }; }
@@ -3984,16 +4112,17 @@ function logicEvalNode(node, scope) {
       const computed = tryEvalQuantifier(node, scope);
       if (computed != null) return computed;
       const domain = node.domain;
+      const shown = node.prettyDisplay || node.display;
       if (domain === 'ℝ' || domain === 'ℂ')
-        throw new Error(`${domain} has too many values to search — give "${node.display}" a value directly, e.g. "${node.display}=True".`);
+        throw new Error(`${domain} has too many values to search — give "${shown}" a value directly, e.g. "${shown}=True".`);
       if (domain && domain !== 'ℕ' && domain !== 'ℤ' && !logicListScope.has(domain))
-        throw new Error(`The list "${domain}" isn’t defined yet — add a line like "${domain}={1,2,3}" first, or give "${node.display}" a value directly.`);
-      throw new Error(`"${node.display}" has no given truth value, and I couldn’t determine it by searching either — add a line like "${node.display}=True" first.`);
+        throw new Error(`The list "${domain}" isn’t defined yet — add a line like "${domain}={1,2,3}" first, or give "${shown}" a value directly.`);
+      throw new Error(`"${shown}" has no given truth value, and I couldn’t determine it by searching either — add a line like "${shown}=True" first.`);
     }
     case 'cmp': {
       let l, r;
-      try { l = math.evaluate(latexToExpr(node.left, false), {}); } catch { throw new Error(`Couldn't work out "${node.left}".`); }
-      try { r = math.evaluate(latexToExpr(node.right, false), {}); } catch { throw new Error(`Couldn't work out "${node.right}".`); }
+      try { l = logicEvalArith(node.left); } catch { throw new Error(`Couldn't work out "${logicPrettySnippet(node.left)}".`); }
+      try { r = logicEvalArith(node.right); } catch { throw new Error(`Couldn't work out "${logicPrettySnippet(node.right)}".`); }
       if (typeof l !== 'number' || typeof r !== 'number') throw new Error('Comparisons need plain numbers on both sides.');
       switch (node.cmp) {
         case '=': return Math.abs(l - r) < 1e-9;
@@ -4023,7 +4152,11 @@ function logicLineAssignment(latex) {
   const norm = logicNormalizeLatex(latex).trim();
   let m = norm.match(new RegExp(`^([a-zA-Z][a-zA-Z0-9]*)\\s*=\\s*${LOGIC_BOOL_RHS.source}$`));
   if (m) return { key: m[1], value: /^True$/i.test(m[2]), display: m[1] };
-  m = norm.match(new RegExp(`^([∃∀]\\s*[a-zA-Z]\\s*\\(.*\\))\\s*=\\s*${LOGIC_BOOL_RHS.source}$`));
+  // The bound variable can be followed by an optional domain clause (∈ℕ,
+  // ∈ℤ, ∈ℝ, ∈ℂ, or a custom list name) before the required parenthesized
+  // body — this must mirror readQuantifier's own domain grammar, or a
+  // domain-restricted quantifier's "=True" given is silently never matched.
+  m = norm.match(new RegExp(`^([∃∀]\\s*[a-zA-Z]\\s*(?:∈\\s*(?:[ℕℤℝℂ]|[a-zA-Z][a-zA-Z0-9]*)\\s*)?\\(.*\\))\\s*=\\s*${LOGIC_BOOL_RHS.source}$`));
   if (m) { const d = m[1].replace(/\s+/g, ''); return { key: d, value: /^True$/i.test(m[2]), display: d }; }
   return null;
 }
@@ -4083,8 +4216,8 @@ function logicMembershipTest(latex) {
   if (!m) return null;
   const exprStr = m[1].trim(), domain = m[2];
   let val;
-  try { val = math.evaluate(latexToExpr(exprStr, complexMode), {}); }
-  catch { return { text: `Couldn't work out "${exprStr}".`, cls: 'err' }; }
+  try { val = math.evaluate(latexToExpr(exprStr, complexMode).replace(/\be\b/g, 'eLogicUnbound'), {}); }
+  catch { return { text: `Couldn't work out "${logicPrettySnippet(exprStr)}".`, cls: 'err' }; }
   if (val && val.isComplex) {
     if (domain === 'ℂ') return { text: '✓  True', cls: 'ok' };
     if (domain === 'ℝ' || domain === 'ℕ' || domain === 'ℤ' || logicListScope.has(domain))
@@ -4201,6 +4334,66 @@ function renderLogicVarsPanel() {
     list.appendChild(row);
   });
 }
+
+/* ── Mobile long-press tooltips ──
+   Native `title` attributes only surface on hover, which touch devices
+   don't have — a held tap here shows the same text in a small bubble
+   instead. Uses event delegation on document (not per-button listeners) so
+   it keeps working through buildQwerty()/buildLogicLetters() re-rendering
+   their buttons via innerHTML. A normal quick tap is untouched: the timer
+   only fires past LONG_PRESS_MS, and the phantom click that follows a long
+   press is swallowed via a capturing document click listener so the
+   button's own action never fires from a long-press release. */
+(function () {
+  const LONG_PRESS_MS = 500, MOVE_TOLERANCE = 10;
+  let pressTimer = null, startX = 0, startY = 0, suppressClickOn = null, bubble = null;
+
+  function hideBubble() {
+    if (bubble) { clearTimeout(bubble._hideTimer); bubble.remove(); bubble = null; }
+  }
+  function showBubble(btn, text) {
+    hideBubble();
+    bubble = document.createElement('div');
+    bubble.className = 'kb-tooltip-bubble';
+    bubble.textContent = text;
+    document.body.appendChild(bubble);
+    const r = btn.getBoundingClientRect();
+    const bw = bubble.offsetWidth, bh = bubble.offsetHeight;
+    bubble.style.left = Math.max(8, Math.min(r.left + r.width / 2 - bw / 2, window.innerWidth - bw - 8)) + 'px';
+    bubble.style.top = Math.max(8, r.top - bh - 8) + 'px';
+    if (navigator.vibrate) { try { navigator.vibrate(15); } catch {} }
+    bubble._hideTimer = setTimeout(hideBubble, 2200);
+  }
+
+  document.addEventListener('touchstart', e => {
+    hideBubble();
+    const btn = e.target.closest('.kb[title]');
+    if (!btn) return;
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    pressTimer = setTimeout(() => {
+      pressTimer = null;
+      suppressClickOn = btn;
+      showBubble(btn, btn.getAttribute('title'));
+    }, LONG_PRESS_MS);
+  }, { passive: true });
+
+  document.addEventListener('touchmove', e => {
+    if (!pressTimer) return;
+    const dx = Math.abs(e.touches[0].clientX - startX), dy = Math.abs(e.touches[0].clientY - startY);
+    if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) { clearTimeout(pressTimer); pressTimer = null; }
+  }, { passive: true });
+
+  document.addEventListener('touchend', () => {
+    if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+  }, { passive: true });
+
+  document.addEventListener('click', e => {
+    if (suppressClickOn && e.target.closest('.kb') === suppressClickOn) {
+      e.preventDefault(); e.stopPropagation();
+      suppressClickOn = null;
+    }
+  }, true);
+})();
 </script>
 </body>
 </html>
