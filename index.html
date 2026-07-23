@@ -332,17 +332,17 @@
     <p>Live math input · exact answers · multi-line</p>
   </div>
   <div class="header-right">
-    <div class="mode-toggle" id="tabToggle" title="Algebra: solve equations and compute expressions. Logic: evaluate propositional formulas to True/False.">
-      <button id="tabAlgebra" class="active" onclick="setTab('algebra')">∫ Algebra</button>
-      <button id="tabLogic" onclick="setTab('logic')">⊨ Logic</button>
+    <div class="mode-toggle algebra-only" title="Exact: answers like √3 stay symbolic. Decimal: shown as 1.732050808 instead.">
+      <button id="modeExact" class="active" onclick="setDecimal(false)">√ Exact</button>
+      <button id="modeDecimal" onclick="setDecimal(true)">≈ Decimal</button>
     </div>
     <div class="mode-toggle" title="Real mode: i is a variable, √(−1) is undefined, and the ℂ domain key is hidden. Complex mode: i is the imaginary unit, and ℂ becomes available as a quantifier/membership domain.">
       <button id="modeReal" class="active" onclick="setComplex(false)">ℝ Real</button>
       <button id="modeComplex" onclick="setComplex(true)">ℂ Complex</button>
     </div>
-    <div class="mode-toggle algebra-only" title="Exact: answers like √3 stay symbolic. Decimal: shown as 1.732050808 instead.">
-      <button id="modeExact" class="active" onclick="setDecimal(false)">√ Exact</button>
-      <button id="modeDecimal" onclick="setDecimal(true)">≈ Decimal</button>
+    <div class="mode-toggle" id="tabToggle" title="Algebra: solve equations and compute expressions. Logic: evaluate propositional formulas to True/False.">
+      <button id="tabAlgebra" class="active" onclick="setTab('algebra')">∫ Algebra</button>
+      <button id="tabLogic" onclick="setTab('logic')">⊨ Logic</button>
     </div>
     <button class="btn" onclick="clearAll()">Clear</button>
   </div>
@@ -486,6 +486,7 @@
     <div class="lines" id="logicLines"></div>
     <div class="status">
       <span>Lines: <b id="logicLineCount">0</b></span>
+      <span>Mode: <b id="logicModeLabel">Real</b></span>
       <span><b>Enter</b> new line · <b>↑↓</b> navigate · assign with <b>A=True</b>, then write a formula to get True/False</span>
     </div>
   </div>
@@ -1210,6 +1211,7 @@ function setComplex(on) {
   document.getElementById('modeReal').classList.toggle('active', !on);
   document.getElementById('modeComplex').classList.toggle('active', on);
   document.getElementById('modeLabel').textContent = on ? 'Complex' : 'Real';
+  document.getElementById('logicModeLabel').textContent = on ? 'Complex' : 'Real';
   // Shared with the Logic tab: the ℂ domain key only makes sense once i is
   // actually the imaginary unit, so it's hidden in Real mode (see the
   // .kb-complex-domain CSS rule) rather than always offered.
