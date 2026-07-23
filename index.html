@@ -506,8 +506,17 @@
         <div class="kb-sep"></div>
         <button class="kb op" onclick="LK.cmd('\\exists')" title="There exists">∃</button>
         <button class="kb op" onclick="LK.cmd('\\forall')" title="For all">∀</button>
+        <button class="kb op" onclick="LK.cmd('\\in')" title="Element of — e.g. exists n in N(...)">∈</button>
       </div>
       <div class="kb-section-label" style="margin-top:2px">Typing words also works: not, and, or, xor, nand, nor, implies, iff</div>
+
+      <div class="kb-section-label">Domains &amp; lists — e.g. exists n∈N(n^2=4), or define L={1,2,3} then use n∈L</div>
+      <div class="kb-row">
+        <button class="kb var" onclick="LK.write('ℕ')" title="Natural numbers (0, 1, 2, ...)">ℕ</button>
+        <button class="kb var" onclick="LK.write('ℤ')" title="Integers (..., -1, 0, 1, ...) — same as no domain at all">ℤ</button>
+        <button class="kb op" onclick="LK.cmd('\\{')">{</button>
+        <button class="kb op" onclick="LK.cmd('\\}')">}</button>
+      </div>
 
       <div class="kb-section-label">Values &amp; comparisons</div>
       <div class="kb-row">
@@ -543,6 +552,7 @@
         <button class="kb op" onclick="LK.cmd('^')" title="Power">xʸ</button>
         <button class="kb op" onclick="LK.type('(')">(</button>
         <button class="kb op" onclick="LK.type(')')">)</button>
+        <button class="kb op" onclick="LK.type(',')" title="Separate list values, e.g. L={1,2,3}">,</button>
       </div>
 
       <div class="kb-section-label">Functions — for use inside a comparison, e.g. sin(x)=2</div>
@@ -3506,6 +3516,7 @@ window.addEventListener('beforeunload', e => {
 let logicActiveMQ = null, logicActiveLine = null;
 let logicScope = new Map();          // key (var name, or a quantified expression's canonical text) -> boolean
 let logicKnownDisplay = new Map();   // key -> {display, value} for the sidebar
+let logicListScope = new Map();      // list name -> array of numbers (custom quantifier domains, e.g. L={1,2,3})
 
 function makeLogicMQConfig() {
   return {
@@ -3652,6 +3663,10 @@ function logicNormalizeLatex(latex) {
     .replace(/\\to(?![a-zA-Z])|\\rightarrow(?![a-zA-Z])|\\implies(?![a-zA-Z])/g, '→')
     .replace(/\\exists(?![a-zA-Z])/g, '∃')
     .replace(/\\forall(?![a-zA-Z])/g, '∀')
+    .replace(/\\in(?![a-zA-Z])/g, '∈')
+    // \{ \} (a literal set-notation brace, distinct from bare { } which
+    // MathQuill uses purely for internal grouping and never puts in output)
+    .replace(/\\\{/g, '{').replace(/\\\}/g, '}')
     .replace(/\\left/g, '').replace(/\\right/g, '')
     .replace(/\\,/g, ' ').replace(/\\!/g, '').replace(/\\;/g, ' ').replace(/\\ /g, ' ');
 }
@@ -3695,9 +3710,25 @@ function logicTokenize(rawLatex) {
     let boundVar = '';
     if (/[a-zA-Z]/.test(s[i] || '')) boundVar = s[i++];
     skipSpace();
-    const body = s[i] === '(' ? readParenSpan() : '';
-    const display = `${sym}${boundVar}${body}`;
-    return { t: 'QUANT', key: display.replace(/\s+/g, ''), display };
+    // Optional domain restriction: exists n \in N (...), exists n \in L (...)
+    // for a predefined set (ℕ/ℤ) or a custom list name defined elsewhere on
+    // the sheet (see logicListAssignment). No \in clause keeps the old
+    // unrestricted-integer-search default.
+    let domain = null;
+    if (s[i] === '∈') {
+      i++; skipSpace();
+      if (/[ℕℤ]/.test(s[i] || '')) { domain = s[i]; i++; }
+      else if (/[a-zA-Z]/.test(s[i] || '')) {
+        let name = s[i++];
+        while (i < s.length && /[a-zA-Z0-9]/.test(s[i])) name += s[i++];
+        domain = name;
+      }
+      skipSpace();
+    }
+    let bodyInner = '';
+    if (s[i] === '(') { const span = readParenSpan(); bodyInner = span.slice(1, -1); }
+    const display = `${sym}${boundVar}${domain ? '∈' + domain : ''}(${bodyInner})`;
+    return { t: 'QUANT', key: display.replace(/\s+/g, ''), display, sym, boundVar, domain, bodyInner };
   }
 
   function tryReadOperand(from) {
@@ -3806,7 +3837,10 @@ function logicParseTokens(tokens) {
     if (tok.t === 'NOT') { advance(); return { op: 'not', a: parseAtom() }; }
     if (tok.t === 'LPAREN') { advance(); const inner = parseIff(); expect('RPAREN'); return inner; }
     if (tok.t === 'LIT') { advance(); return { op: 'lit', value: tok.value }; }
-    if (tok.t === 'QUANT') { advance(); return { op: 'quant', key: tok.key, display: tok.display }; }
+    if (tok.t === 'QUANT') {
+      advance();
+      return { op: 'quant', key: tok.key, display: tok.display, sym: tok.sym, boundVar: tok.boundVar, domain: tok.domain, bodyInner: tok.bodyInner };
+    }
     if (tok.t === 'CMP') { advance(); return { op: 'cmp', left: tok.left, cmp: tok.op, right: tok.right }; }
     if (tok.t === 'IDENT') { advance(); return { op: 'var', name: tok.name }; }
     throw new Error('Unexpected symbol in the formula.');
@@ -3840,33 +3874,49 @@ function logicParseTokens(tokens) {
   return result;
 }
 
-/* When a quantified expression has no explicit given truth value, attempt to
-   actually determine one via bounded integer search — "∃n(n^2=4)" (there is
-   an integer n such that n²=4) is genuinely decidable that way, not just
-   something that has to be told to the calculator. Substitutes each trial
-   integer for the bound variable (word-boundary text substitution) and
-   re-runs the FULL logic pipeline on the result, so a compound body
-   (∃x(x>0 ∧ x<10)) works too, not just a single bare comparison. Returns
-   true/false if determined, or null if inconclusive (falls back to
-   requiring an explicit given) — this is a bounded practical search, not a
-   proof, so a "false" from ∀ or an exhausted ∃ search only means "true
-   within the searched range", worded that way by the caller isn't
-   attempted here since plain true/false is what the rest of the evaluator
-   expects. */
-function tryEvalQuantifier(node, scope) {
-  const m = node.display.match(/^([∃∀])([a-zA-Z])\((.*)\)$/);
-  if (!m) return null;
-  const [, sym, boundVar, bodyInner] = m;
+/* The set of values a quantifier's bound variable ranges over. No \in clause
+   (domain===null) keeps the old unrestricted-integer-search default (ℤ in
+   all but name). ℕ/ℤ are bounded practical searches, same caveat as always.
+   A custom list (domain is a name registered via logicListAssignment) is
+   exact and exhaustive — it's finite by construction, no bound needed.
+   Returns null for an unknown/undefined list name, or a domain symbol this
+   calculator doesn't support a search over (ℝ/ℚ — dense, and the exact
+   substitution-then-compare approach here needs a tolerance-aware
+   continuous search to be trustworthy for those, which isn't attempted) —
+   the caller falls back to requiring an explicit given in that case.  */
+function domainValues(domain) {
   const RANGE = 200;
+  if (domain == null || domain === 'ℤ') { const a = []; for (let k = -RANGE; k <= RANGE; k++) a.push(k); return a; }
+  if (domain === 'ℕ') { const a = []; for (let k = 0; k <= RANGE; k++) a.push(k); return a; }
+  if (logicListScope.has(domain)) return logicListScope.get(domain);
+  return null;
+}
+
+/* When a quantified expression has no explicit given truth value, attempt to
+   actually determine one via search over its domain — "∃n(n^2=4)" (there is
+   an integer n such that n²=4) is genuinely decidable that way, not just
+   something that has to be told to the calculator; so is "∃n∈L(...)" for a
+   custom finite list L. Substitutes each trial value for the bound variable
+   (word-boundary text substitution) and re-runs the FULL logic pipeline on
+   the result, so a compound body (∃x(x>0 ∧ x<10)) works too, not just a
+   single bare comparison. Returns true/false if determined, or null if
+   inconclusive (falls back to requiring an explicit given) — this is a
+   bounded practical search, not a proof, so a "false" from ∀ or an
+   exhausted ∃ search only means "true within the searched range/list". */
+function tryEvalQuantifier(node, scope) {
+  const { sym, boundVar, domain, bodyInner } = node;
+  if (!boundVar || !bodyInner) return null;
+  const values = domainValues(domain);
+  if (!values) return null;
   const sub = new RegExp(`\\b${boundVar}\\b`, 'g');
   let sawResult = false;
-  for (let k = -RANGE; k <= RANGE; k++) {
+  for (const k of values) {
     const substituted = bodyInner.replace(sub, `(${k})`);
     let val;
     try {
       const toks = logicTokenize(substituted);
       val = logicEvalNode(logicParseTokens(toks), scope);
-    } catch { continue; }   // this k didn't evaluate cleanly — skip it, not a hard failure
+    } catch { continue; }   // this value didn't evaluate cleanly — skip it, not a hard failure
     sawResult = true;
     if (sym === '∃' && val) return true;
     if (sym === '∀' && !val) return false;
@@ -3894,7 +3944,10 @@ function logicEvalNode(node, scope) {
       if (scope.has(node.key)) return scope.get(node.key);
       const computed = tryEvalQuantifier(node, scope);
       if (computed != null) return computed;
-      throw new Error(`"${node.display}" has no given truth value, and I couldn’t determine it by searching integers either — add a line like "${node.display}=True" first.`);
+      const domain = node.domain;
+      if (domain && domain !== 'ℕ' && domain !== 'ℤ' && !logicListScope.has(domain))
+        throw new Error(`The list "${domain}" isn’t defined yet — add a line like "${domain}={1,2,3}" first, or give "${node.display}" a value directly.`);
+      throw new Error(`"${node.display}" has no given truth value, and I couldn’t determine it by searching either — add a line like "${node.display}=True" first.`);
     }
     case 'cmp': {
       let l, r;
@@ -3942,13 +3995,45 @@ function logicLineAssignment(latex) {
    instead of showing as unstyled plain text. */
 function logicDisplayToTeX(display) {
   return display
-    .replace(/∃/g, '\\exists ').replace(/∀/g, '\\forall ')
+    .replace(/∃/g, '\\exists ').replace(/∀/g, '\\forall ').replace(/∈/g, '\\in ')
     .replace(/¬/g, '\\neg ').replace(/∧/g, '\\wedge ').replace(/∨/g, '\\vee ')
     .replace(/⊕/g, '\\oplus ').replace(/→/g, '\\to ').replace(/↔/g, '\\leftrightarrow ')
     .replace(/≤/g, '\\le ').replace(/≥/g, '\\ge ').replace(/≠/g, '\\neq ');
 }
 
+/* L = {1, 2, 3, 5, 8} — a custom finite list a quantifier can range over
+   (\exists n \in L(...)), as an alternative to the predefined ℕ/ℤ domains
+   or the plain unrestricted-integer-search default. Checked before the
+   boolean assignment shape since its RHS is unambiguous ({...}). */
+function logicListAssignment(latex) {
+  const norm = logicNormalizeLatex(latex).trim();
+  const m = norm.match(/^([a-zA-Z][a-zA-Z0-9]*)\s*=\s*\{(.*)\}$/);
+  if (!m) return null;
+  const name = m[1];
+  const parts = m[2].split(',').map(s => s.trim()).filter(Boolean);
+  if (!parts.length) return { name, error: 'A list needs at least one value, like L={1,2,3}.' };
+  const values = [];
+  for (const p of parts) {
+    let v;
+    try { v = math.evaluate(latexToExpr(p, false), {}); } catch { return { name, error: `Couldn't work out "${p}" in the list.` }; }
+    if (typeof v !== 'number' || !isFinite(v)) return { name, error: `"${p}" in the list isn't a plain number.` };
+    values.push(v);
+  }
+  return { name, values };
+}
+
 function evalLogicLine(latex) {
+  const list = logicListAssignment(latex);
+  if (list) {
+    if (list.error) return { text: list.error, cls: 'err' };
+    logicListScope.set(list.name, list.values);
+    const valuesText = list.values.map(fmtNum).join(', ');
+    return {
+      tex: `${list.name} = \\{${valuesText}\\}`,
+      text: `${list.name} = {${valuesText}}`,
+      cls: 'sym',
+    };
+  }
   const asg = logicLineAssignment(latex);
   if (asg) {
     logicScope.set(asg.key, asg.value);
@@ -3970,6 +4055,7 @@ function evalLogicLine(latex) {
 function evaluateLogicAll() {
   logicScope = new Map();
   logicKnownDisplay = new Map();
+  logicListScope = new Map();
   const linesArr = allLogicLines();
 
   const PASSES = 3;
