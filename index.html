@@ -314,6 +314,8 @@
 
     @media (max-width:600px){ .lresult{ max-width:150px; } }
     body.tab-logic .algebra-only { display: none; }
+    .kb-complex-domain { display: none; }
+    body.mode-complex .kb-complex-domain { display: inline-block; }
   </style>
 </head>
 <body>
@@ -334,7 +336,7 @@
       <button id="tabAlgebra" class="active" onclick="setTab('algebra')">∫ Algebra</button>
       <button id="tabLogic" onclick="setTab('logic')">⊨ Logic</button>
     </div>
-    <div class="mode-toggle algebra-only" title="Real mode: i is a variable, √(−1) is undefined. Complex mode: i is the imaginary unit.">
+    <div class="mode-toggle" title="Real mode: i is a variable, √(−1) is undefined, and the ℂ domain key is hidden. Complex mode: i is the imaginary unit, and ℂ becomes available as a quantifier/membership domain.">
       <button id="modeReal" class="active" onclick="setComplex(false)">ℝ Real</button>
       <button id="modeComplex" onclick="setComplex(true)">ℂ Complex</button>
     </div>
@@ -383,6 +385,8 @@
 
           <button class="kb op" onclick="K.type('(')">(</button>
           <button class="kb op" onclick="K.type(')')">)</button>
+          <button class="kb op" onclick="K.type('[')" title="List — e.g. [1,2,3]">[</button>
+          <button class="kb op" onclick="K.type(']')" title="List — e.g. [1,2,3]">]</button>
           <button class="kb op" onclick="K.cmd('\\frac')"><span class="kb-frac"><span>a</span><span class="kb-frac-bar"></span><span>b</span></span></button>
           <button class="kb op" onclick="K.abs()">|x|</button>
 
@@ -514,8 +518,10 @@
       <div class="kb-row">
         <button class="kb var" onclick="LK.write('ℕ')" title="Natural numbers (0, 1, 2, ...)">ℕ</button>
         <button class="kb var" onclick="LK.write('ℤ')" title="Integers (..., -1, 0, 1, ...) — same as no domain at all">ℤ</button>
-        <button class="kb op" onclick="LK.cmd('\\{')">{</button>
-        <button class="kb op" onclick="LK.cmd('\\}')">}</button>
+        <button class="kb var" onclick="LK.write('ℝ')" title="Real numbers — too many to search, so a quantifier over ℝ needs an explicit =True/=False">ℝ</button>
+        <button class="kb var kb-complex-domain" onclick="LK.write('ℂ')" title="Complex numbers — too many to search, so a quantifier over ℂ needs an explicit =True/=False">ℂ</button>
+        <button class="kb op" onclick="LK.cmd('\\{')" title="Set — e.g. {1,2,3}, or {} for the empty set">{</button>
+        <button class="kb op" onclick="LK.cmd('\\}')" title="Set — e.g. {1,2,3}, or {} for the empty set">}</button>
       </div>
 
       <div class="kb-section-label">Values &amp; comparisons</div>
@@ -1205,7 +1211,12 @@ function setComplex(on) {
   document.getElementById('modeReal').classList.toggle('active', !on);
   document.getElementById('modeComplex').classList.toggle('active', on);
   document.getElementById('modeLabel').textContent = on ? 'Complex' : 'Real';
+  // Shared with the Logic tab: the ℂ domain key only makes sense once i is
+  // actually the imaginary unit, so it's hidden in Real mode (see the
+  // .kb-complex-domain CSS rule) rather than always offered.
+  document.body.classList.toggle('mode-complex', on);
   evaluateAll();
+  evaluateLogicAll();
 }
 
 function setDecimal(on) {
@@ -3156,6 +3167,11 @@ function latexToExpr(tex, complex) {
     .replace(/\\left\[/g, '(').replace(/\\right\]/g, ')')
     .replace(/\\left\\\{/g, '(').replace(/\\right\\\}/g, ')')
     .replace(/\\left\./g, '(').replace(/\\right\./g, ')')
+    // Bare \{ \} (typed via the { } keyboard keys, no \left\right wrapper) —
+    // same grouping treatment as [ ] and { } above: this calculator has no
+    // separate set/list data type, curly braces and brackets are just
+    // alternate grouping notation, e.g. {2(x+1)} same as (2(x+1)).
+    .replace(/\\\{/g, '(').replace(/\\\}/g, ')')
     .replace(/\\left/g, '').replace(/\\right/g, '')
     .replace(/\\,/g, ' ').replace(/\\!/g, '').replace(/\\;/g, ' ').replace(/\\ /g, ' ')
     .replace(/\\cdot/g, '*').replace(/\\times/g, '*').replace(/\\div/g, '/')
@@ -3717,7 +3733,7 @@ function logicTokenize(rawLatex) {
     let domain = null;
     if (s[i] === '∈') {
       i++; skipSpace();
-      if (/[ℕℤ]/.test(s[i] || '')) { domain = s[i]; i++; }
+      if (/[ℕℤℝℂ]/.test(s[i] || '')) { domain = s[i]; i++; }
       else if (/[a-zA-Z]/.test(s[i] || '')) {
         let name = s[i++];
         while (i < s.length && /[a-zA-Z0-9]/.test(s[i])) name += s[i++];
@@ -3725,8 +3741,16 @@ function logicTokenize(rawLatex) {
       }
       skipSpace();
     }
+    // Body: either wrapped in parens (∃x∈ℤ(x>5), including "()" empty while
+    // still typing), or after a colon with no parens at all (∃x∈ℤ: x>5) —
+    // the colon form runs to the end of the line, matching how you'd say it
+    // out loud ("there exists x in Z such that..."). Neither an empty-paren
+    // body nor no body/colon at all (just finished typing the domain) is an
+    // error — it's "still being typed"; see the pending check in
+    // logicEvalNode's 'quant' case.
     let bodyInner = '';
     if (s[i] === '(') { const span = readParenSpan(); bodyInner = span.slice(1, -1); }
+    else if (s[i] === ':') { i++; skipSpace(); bodyInner = s.slice(i).trim(); i = s.length; }
     const display = `${sym}${boundVar}${domain ? '∈' + domain : ''}(${bodyInner})`;
     return { t: 'QUANT', key: display.replace(/\s+/g, ''), display, sym, boundVar, domain, bodyInner };
   }
@@ -3908,6 +3932,10 @@ function tryEvalQuantifier(node, scope) {
   if (!boundVar || !bodyInner) return null;
   const values = domainValues(domain);
   if (!values) return null;
+  // Quantifying over the empty set: ∃ is vacuously false (no element could
+  // ever satisfy it), ∀ is vacuously true (every element — there are none —
+  // trivially satisfies it) — the standard convention, not "inconclusive".
+  if (values.length === 0) return sym === '∃' ? false : true;
   const sub = new RegExp(`\\b${boundVar}\\b`, 'g');
   let sawResult = false;
   for (const k of values) {
@@ -3942,9 +3970,15 @@ function logicEvalNode(node, scope) {
       return scope.get(node.name);
     case 'quant': {
       if (scope.has(node.key)) return scope.get(node.key);
+      // No body yet (just typed "∃x∈ℤ" or "∃x∈ℤ()", nothing after) — still
+      // being composed, not an error. evalLogicLine turns this into a blank
+      // (pending) result instead of a red error message.
+      if (!node.bodyInner) { const e = new Error('pending'); e.pending = true; throw e; }
       const computed = tryEvalQuantifier(node, scope);
       if (computed != null) return computed;
       const domain = node.domain;
+      if (domain === 'ℝ' || domain === 'ℂ')
+        throw new Error(`${domain} has too many values to search — give "${node.display}" a value directly, e.g. "${node.display}=True".`);
       if (domain && domain !== 'ℕ' && domain !== 'ℤ' && !logicListScope.has(domain))
         throw new Error(`The list "${domain}" isn’t defined yet — add a line like "${domain}={1,2,3}" first, or give "${node.display}" a value directly.`);
       throw new Error(`"${node.display}" has no given truth value, and I couldn’t determine it by searching either — add a line like "${node.display}=True" first.`);
@@ -4010,8 +4044,10 @@ function logicListAssignment(latex) {
   const m = norm.match(/^([a-zA-Z][a-zA-Z0-9]*)\s*=\s*\{(.*)\}$/);
   if (!m) return null;
   const name = m[1];
+  // {} on its own (no values) is the empty set — a legitimate, if unusual,
+  // domain: ∃ over it is vacuously false, ∀ vacuously true (see
+  // tryEvalQuantifier's values.length===0 case), not an error.
   const parts = m[2].split(',').map(s => s.trim()).filter(Boolean);
-  if (!parts.length) return { name, error: 'A list needs at least one value, like L={1,2,3}.' };
   const values = [];
   for (const p of parts) {
     let v;
@@ -4020,6 +4056,43 @@ function logicListAssignment(latex) {
     values.push(v);
   }
   return { name, values };
+}
+
+/* Standalone membership test — "5∈ℕ", "3.5∈ℤ", "x∈L" as a complete formula
+   line on its own, evaluating straight to True/False, distinct from ∈ used
+   inside a quantifier's domain clause (readQuantifier handles that case;
+   this only matches when ∈ is the TOP-LEVEL, whole-line operator — the
+   trailing $ anchor is what tells them apart, since a quantifier's ∈domain
+   is always followed by the body). ℝ/ℂ are treated as "any computable
+   number" here (unlike as a quantifier domain, membership in ℝ/ℂ doesn't
+   need a search — it's just a check on the value itself). */
+function logicMembershipTest(latex) {
+  const norm = logicNormalizeLatex(latex).trim();
+  // A line starting with ∃/∀ is always a quantifier — even one still being
+  // typed, with nothing after "∈ℤ" yet (no colon, no parens) — never a
+  // membership test; let it fall through to the normal tokenizer/pending path.
+  if (/^[∃∀]/.test(norm)) return null;
+  const m = norm.match(/^(.+)∈([a-zA-Z][a-zA-Z0-9]*|[ℕℤℝℂ])$/);
+  if (!m) return null;
+  const exprStr = m[1].trim(), domain = m[2];
+  let val;
+  try { val = math.evaluate(latexToExpr(exprStr, complexMode), {}); }
+  catch { return { text: `Couldn't work out "${exprStr}".`, cls: 'err' }; }
+  if (val && val.isComplex) {
+    if (domain === 'ℂ') return { text: '✓  True', cls: 'ok' };
+    if (domain === 'ℝ' || domain === 'ℕ' || domain === 'ℤ' || logicListScope.has(domain))
+      return { text: '✗  False', cls: null };
+    return { text: `The list "${domain}" isn’t defined yet — add a line like "${domain}={1,2,3}" first.`, cls: 'err' };
+  }
+  if (typeof val !== 'number' || !isFinite(val))
+    return { text: 'Membership tests need a plain number on the left of ∈.', cls: 'err' };
+  let result;
+  if (domain === 'ℕ') result = Number.isInteger(val) && val >= 0;
+  else if (domain === 'ℤ') result = Number.isInteger(val);
+  else if (domain === 'ℝ' || domain === 'ℂ') result = true;   // every real is also complex
+  else if (logicListScope.has(domain)) result = logicListScope.get(domain).some(v => Math.abs(v - val) < 1e-9);
+  else return { text: `The list "${domain}" isn’t defined yet — add a line like "${domain}={1,2,3}" first.`, cls: 'err' };
+  return { text: result ? '✓  True' : '✗  False', cls: result ? 'ok' : null };
 }
 
 function evalLogicLine(latex) {
@@ -4045,10 +4118,18 @@ function evalLogicLine(latex) {
       cls: asg.value ? 'ok' : null,
     };
   }
+  const member = logicMembershipTest(latex);
+  if (member) return member;
   const tokens = logicTokenize(latex);
   if (!tokens.length) return null;
   const ast = logicParseTokens(tokens);
-  const value = logicEvalNode(ast, logicScope);
+  let value;
+  try {
+    value = logicEvalNode(ast, logicScope);
+  } catch (e) {
+    if (e.pending) return null;   // still being typed — blank, not an error
+    throw e;
+  }
   return { text: value ? '✓  True' : '✗  False', cls: value ? 'ok' : null };
 }
 
