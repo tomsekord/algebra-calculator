@@ -4051,6 +4051,38 @@ function domainValues(domain) {
   return null;
 }
 
+/* ∃x∈ℝ(...) can't be walked point by point the way ℕ/ℤ/a list can — but a
+   single bare equation (x^2=4, x^3=8, ...) is something Algebra already
+   knows how to solve, via the same polynomial root-finding solveEquation
+   itself uses. Only the PURE helpers are reused here (polyCoeffs,
+   polyRootParts) — never solveEquation itself, nor the trig/exp inverse
+   helpers, since both register the solved value into Algebra's own
+   Variables sidebar/nerdamer state as a side effect, which must never leak
+   out of a Logic evaluation. Handles only a single "=" comparison whose
+   polynomial has real roots findable this way; anything else (inequalities,
+   compound formulas, transcendental equations) returns null and falls back
+   to requiring an explicit given, same as before. */
+function tryRealExistsSolve(boundVar, bodyInner) {
+  let toks;
+  try { toks = logicTokenize(bodyInner); } catch { return null; }
+  if (toks.length !== 1 || toks[0].t !== 'CMP' || toks[0].op !== '=') return null;
+  let lhs, rhs;
+  try {
+    lhs = latexToExpr(toks[0].left, false);
+    rhs = latexToExpr(toks[0].right, false);
+  } catch { return null; }
+  const poly = `(${lhs})-(${rhs})`;
+  if (!findUnknowns(poly).includes(boundVar)) return null;   // bound var must actually appear
+  const coeffs = polyCoeffs(poly, boundVar);
+  if (!coeffs) return null;   // not a clean polynomial — can't safely determine here
+  const deg = coeffs.length - 1;
+  if (deg < 1) return Math.abs(coeffs[0] || 0) < 1e-9;   // x=x+1 (no solution) vs x=x (identity)
+  let parts;
+  try { parts = polyRootParts(coeffs, poly, boundVar); } catch { return null; }
+  if (!parts) return null;
+  return parts.some(p => p.real);
+}
+
 /* When a quantified expression has no explicit given truth value, attempt to
    actually determine one via search over its domain — "∃n(n^2=4)" (there is
    an integer n such that n²=4) is genuinely decidable that way, not just
@@ -4065,6 +4097,7 @@ function domainValues(domain) {
 function tryEvalQuantifier(node, scope) {
   const { sym, boundVar, domain, bodyInner } = node;
   if (!boundVar || !bodyInner) return null;
+  if (domain === 'ℝ' && sym === '∃') return tryRealExistsSolve(boundVar, bodyInner);
   const values = domainValues(domain);
   if (!values) return null;
   // Quantifying over the empty set: ∃ is vacuously false (no element could
