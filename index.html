@@ -2597,6 +2597,42 @@ function preferRealOddRoot(expr) {
 
 function isCleanNumber(x) { return /^-?\d+(\/\d+)?$/.test(fmtNum(x)); }
 
+/* A decimal LITERAL the user actually typed (3.3333333333) is an exact
+   rational number by construction — 33333333333/10000000000, not floating-
+   point noise — so an expression built purely from such literals (plain
+   arithmetic, no functions/constants that could introduce genuine
+   irrationality) has an exact rational VALUE, however many digits its
+   reduced fraction needs. fmtNum's nearby-fraction snap (used by both
+   isCleanNumber above and the plain fmtNum/fmtNumTeX fallback below) only
+   checks whether the result is CLOSE to a simple fraction within 1e-9 —
+   for something like 1/3.3333333333 (≈0.299999999997, genuinely NOT 0.3)
+   that finds the wrong, merely-nearby 3/10 instead of the exact answer.
+   Computed here via nerdamer's own exact rational arithmetic instead, and
+   only trusted if the result is a plain integer or a/b fraction — anything
+   else (a symbolic form like sqrt(2), meaning the expression wasn't purely
+   rational after all) is left for tryExactForm below to handle.
+
+   nerdamer itself does NOT preserve a decimal literal exactly, though —
+   nerdamer('3.3333333333').toString() comes back as
+   "33333478603/10000043581", a DIFFERENT nearby fraction from its own
+   internal float-rationalization, not the true 33333333333/10000000000.
+   So every decimal literal is rewritten to an explicit integer ratio
+   first (3.3333333333 → (33333333333/10000000000)) — nerdamer preserves
+   an already-exact ratio like that perfectly, confirmed directly. */
+function decimalLiteralsToExactFractions(expr) {
+  return expr.replace(/(\d+)\.(\d+)/g, (m, intPart, fracPart) =>
+    `((${intPart}${fracPart})/(1${'0'.repeat(fracPart.length)}))`);
+}
+function tryExactRational(expr) {
+  try {
+    nerdExact();
+    const s = nerdamer(decimalLiteralsToExactFractions(expr));
+    const dstr = disp(s.toString());
+    if (!/^-?\d+$/.test(dstr) && !/^-?\d+\/\d+$/.test(dstr)) return null;
+    return { tex: safeTeX(s), text: dstr, cls: 'num', raw: s.toString() };
+  } catch { return null; }
+}
+
 /* In Exact mode, a plain expression like "sqrt(3)" or "e" should stay
    symbolic instead of showing mathjs's decimal — but mathjs always
    evaluates successfully first (no exception to fall back from), so
@@ -2715,6 +2751,13 @@ function plainExpr(expr) {
         // the decimal mathjs always computes first — but only bother when
         // the decimal doesn't already look clean (no point re-deriving "5").
         if (!decimalMode) {
+          // Try nerdamer's exact rational value FIRST — fmtNum/tryExactForm
+          // below both accept anything within 1e-9 of a "nice" fraction,
+          // which is right for floating-point noise but wrong for a
+          // deliberately precise decimal literal (1/3.3333333333 is close
+          // to but not equal to 3/10 — snapping to 3/10 is simply incorrect).
+          const rational = tryExactRational(expr);
+          if (rational) return rational;
           const exact = tryExactForm(expr, val);
           if (exact) return exact;
         }
@@ -2724,6 +2767,8 @@ function plainExpr(expr) {
         if (!complexMode && Math.abs(val.im) > 1e-12)
           return { text: 'This needs an imaginary number — turn on ℂ Complex mode (top right) to see it.', cls: 'err' };
         if (!decimalMode) {
+          const rational = tryExactRational(expr);
+          if (rational) return rational;
           const exact = tryExactForm(expr, val);
           if (exact) return exact;
         }
