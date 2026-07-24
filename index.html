@@ -321,23 +321,67 @@
     .pal-item .pal-name { font-size:.68rem; color:var(--dim); }
     .pal-item:hover .pal-name { color:#eee; }
 
-    /* ── Guided tour modal ── */
-    .tour-modal { max-width:480px; }
-    .tour-step-eyebrow { font-size:.66rem; text-transform:uppercase; letter-spacing:.9px; color:var(--accent-l); margin-bottom:6px; }
-    .tour-step-body { font-size:.92rem; line-height:1.55; color:var(--text); }
-    .tour-step-body code {
+    /* ── Guided tour: anchored popup with an arrow pointing at the real UI,
+       instead of a plain centered modal — so each step visibly points at
+       (and, via live example lines, demonstrates) the thing it's describing.
+       Step 1 is the one exception: centered, no arrow, no highlight. ── */
+    /* The overlay is the click-blocker (spans the whole page, always) — its
+       own background only carries the dimming when there's no highlight to
+       do it instead (step 1's centered popup). Once a highlight IS shown,
+       the overlay goes transparent and the highlight's own giant box-shadow
+       takes over the dimming: a shadow spread out to 9999px darkens the
+       ENTIRE page except within the highlight's own box (nothing is painted
+       there), which is what actually makes the anchored part brighter than
+       its surroundings instead of dimmed along with everything else. */
+    .tour-overlay {
+      position:fixed; inset:0; z-index:199; background:rgba(0,0,0,.55);
+      display:none;
+    }
+    .tour-overlay.show { display:block; }
+    .tour-overlay.has-highlight { background:transparent; }
+    .tour-highlight {
+      position:fixed; z-index:201; display:none; pointer-events:none;
+      border:2px solid var(--accent-l); border-radius:10px;
+      box-shadow:0 0 0 9999px rgba(0,0,0,.6), 0 0 0 4px rgba(124,92,191,.28);
+      transition:left .2s ease, top .2s ease, width .2s ease, height .2s ease;
+    }
+    .tour-highlight.show { display:block; }
+    .tour-arrow {
+      position:fixed; z-index:201; display:none; width:14px; height:14px;
+      background:var(--surface); border:1px solid var(--border);
+      transform:rotate(45deg);
+    }
+    .tour-arrow.show { display:block; }
+    .tour-popup {
+      position:fixed; z-index:202; display:none; width:320px; max-width:calc(100vw - 24px);
+      background:var(--surface); border:1px solid var(--border); border-radius:14px;
+      box-shadow:0 20px 60px rgba(0,0,0,.5); padding:16px 18px;
+    }
+    .tour-popup.show { display:block; }
+    .tour-popup.centered { left:50%; top:50%; transform:translate(-50%,-50%); width:400px; }
+    .tour-popup-close {
+      position:absolute; top:10px; right:12px; background:none; border:none;
+      color:var(--dim); font-size:1.15rem; cursor:pointer; line-height:1; padding:2px;
+    }
+    .tour-popup-close:hover { color:var(--red); }
+    .tour-popup-eyebrow { font-size:.62rem; text-transform:uppercase; letter-spacing:.9px; color:var(--accent-l); margin-bottom:6px; }
+    .tour-popup-title { font-size:1rem; font-weight:600; margin-bottom:8px; padding-right:22px; }
+    .tour-popup-body { font-size:.87rem; line-height:1.55; color:var(--text); }
+    .tour-popup-body code {
       background:var(--card); border:1px solid var(--border); border-radius:5px;
       padding:1px 6px; font-family:'Cambria Math','Cambria',serif; color:var(--gold);
     }
-    .tour-dots { display:flex; justify-content:center; gap:6px; margin:18px 0 4px; }
-    .tour-dot { width:7px; height:7px; border-radius:50%; background:var(--border); transition:background .15s; }
-    .tour-dot.active { background:var(--accent); }
-    .tour-nav { display:flex; justify-content:space-between; align-items:center; margin-top:14px; }
-    .tour-nav-right { display:flex; gap:8px; }
+    .tour-popup-footer { display:flex; justify-content:space-between; align-items:center; margin-top:16px; gap:10px; }
+    .tour-popup-progress { font-size:.68rem; color:var(--dim); white-space:nowrap; }
+    .tour-popup-nav { display:flex; gap:8px; }
     .tour-next { background:var(--accent); border-color:var(--accent); color:#fff; }
     .tour-next:hover { filter:brightness(1.1); }
     #tourBackBtn:disabled { opacity:.35; cursor:default; }
     #tourBackBtn:disabled:hover { background:var(--card); border-color:var(--border); }
+    @media (max-width:560px) {
+      .tour-popup { width:calc(100vw - 24px); padding:14px 16px; }
+      .tour-popup.centered { width:calc(100vw - 40px); }
+    }
 
     #toast {
       position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
@@ -372,11 +416,11 @@
     <p>Live math input · exact answers · multi-line</p>
   </div>
   <div class="header-right">
-    <div class="mode-toggle algebra-only" title="Exact: answers like √3 stay symbolic. Decimal: shown as 1.732050808 instead.">
+    <div class="mode-toggle algebra-only" id="modeToggleExact" title="Exact: answers like √3 stay symbolic. Decimal: shown as 1.732050808 instead.">
       <button id="modeExact" class="active" onclick="setDecimal(false)">√ Exact</button>
       <button id="modeDecimal" onclick="setDecimal(true)">≈ Decimal</button>
     </div>
-    <div class="mode-toggle" title="Real mode: i is a variable, √(−1) is undefined, and the ℂ domain key is hidden. Complex mode: i is the imaginary unit, and ℂ becomes available as a quantifier/membership domain.">
+    <div class="mode-toggle" id="modeToggleComplex" title="Real mode: i is a variable, √(−1) is undefined, and the ℂ domain key is hidden. Complex mode: i is the imaginary unit, and ℂ becomes available as a quantifier/membership domain.">
       <button id="modeReal" class="active" onclick="setComplex(false)">ℝ Real</button>
       <button id="modeComplex" onclick="setComplex(true)">ℂ Complex</button>
     </div>
@@ -385,7 +429,7 @@
       <button id="tabLogic" onclick="setTab('logic')">⊨ Logic</button>
     </div>
     <button class="btn" onclick="clearAll()">Clear</button>
-    <button class="btn" onclick="openTour()" title="Take a quick tour of the features">?</button>
+    <button class="btn" id="tourOpenBtn" onclick="openTour()" title="Take a quick tour of the features">?</button>
   </div>
 </header>
 
@@ -419,25 +463,25 @@
       <div class="kb-section-label">Keypad</div>
       <div class="kb-desmos">
         <div class="kb-grid kb-grid-misc">
-          <button class="kb op" onclick="K.pow2()" title="Square — raise to the power of 2">x²</button>
-          <button class="kb op" onclick="K.cmd('^')" title="Exponent — raise to any power">xʸ</button>
-          <button class="kb op" onclick="K.cmd('\\sqrt')" title="Square root">√</button>
-          <button class="kb op" onclick="K.nthroot()" title="Nth root — e.g. cube root, 4th root, ...">ⁿ√</button>
+          <button class="kb op" data-tour="exp-roots" onclick="K.pow2()" title="Square — raise to the power of 2">x²</button>
+          <button class="kb op" data-tour="exp-roots" onclick="K.cmd('^')" title="Exponent — raise to any power">xʸ</button>
+          <button class="kb op" data-tour="exp-roots" onclick="K.cmd('\\sqrt')" title="Square root">√</button>
+          <button class="kb op" data-tour="exp-roots" onclick="K.nthroot()" title="Nth root — e.g. cube root, 4th root, ...">ⁿ√</button>
 
-          <button class="kb op" onclick="K.type('(')" title="Open parenthesis — groups part of an expression">(</button>
-          <button class="kb op" onclick="K.type(')')" title="Close parenthesis">)</button>
-          <button class="kb op" onclick="K.type('[')" title="List — e.g. [1,2,3]">[</button>
-          <button class="kb op" onclick="K.type(']')" title="List — e.g. [1,2,3]">]</button>
-          <button class="kb op" onclick="K.cmd('\\frac')" title="Fraction"><span class="kb-frac"><span>a</span><span class="kb-frac-bar"></span><span>b</span></span></button>
-          <button class="kb op" onclick="K.abs()" title="Absolute value">|x|</button>
+          <button class="kb op" data-tour="grouping" onclick="K.type('(')" title="Open parenthesis — groups part of an expression">(</button>
+          <button class="kb op" data-tour="grouping" onclick="K.type(')')" title="Close parenthesis">)</button>
+          <button class="kb op" data-tour="grouping" onclick="K.type('[')" title="List — e.g. [1,2,3]">[</button>
+          <button class="kb op" data-tour="grouping" onclick="K.type(']')" title="List — e.g. [1,2,3]">]</button>
+          <button class="kb op" data-tour="grouping" onclick="K.cmd('\\frac')" title="Fraction"><span class="kb-frac"><span>a</span><span class="kb-frac-bar"></span><span>b</span></span></button>
+          <button class="kb op" data-tour="grouping" onclick="K.abs()" title="Absolute value">|x|</button>
 
-          <button class="kb op" onclick="K.type('pi')" title="Pi ≈ 3.14159">π</button>
-          <button class="kb op" onclick="K.type('e')" title="Euler's number ≈ 2.71828">e</button>
-          <button class="kb var" onclick="K.cmd('\\theta')" title="Theta — commonly used for angles">θ</button>
+          <button class="kb op" data-tour="constants" onclick="K.type('pi')" title="Pi ≈ 3.14159">π</button>
+          <button class="kb op" data-tour="constants" onclick="K.type('e')" title="Euler's number ≈ 2.71828">e</button>
+          <button class="kb var" data-tour="constants" onclick="K.cmd('\\theta')" title="Theta — commonly used for angles">θ</button>
           <button class="kb del" onclick="K.backspace()" title="Backspace — delete the last character">⌫</button>
 
-          <button class="kb op kb-half" onclick="K.cmd('\\pm')" title="Plus/minus — e.g. (-b±√disc)/(2a)">±</button>
-          <button class="kb op kb-half" onclick="K.cmd('\\infty')" title="Infinity — e.g. for limits as x→∞">∞</button>
+          <button class="kb op kb-half" data-tour="constants" onclick="K.cmd('\\pm')" title="Plus/minus — e.g. (-b±√disc)/(2a)">±</button>
+          <button class="kb op kb-half" data-tour="constants" onclick="K.cmd('\\infty')" title="Infinity — e.g. for limits as x→∞">∞</button>
         </div>
 
         <div class="kb-grid kb-grid-num">
@@ -472,7 +516,7 @@
       </div>
 
       <div class="kb-section-label">Functions</div>
-      <div class="kb-row">
+      <div class="kb-row" id="kbSectionFunctions">
         <button class="kb fn" onclick="K.fn('sin')" title="Sine function">sin</button>
         <button class="kb fn" onclick="K.fn('cos')" title="Cosine function">cos</button>
         <button class="kb fn" onclick="K.fn('tan')" title="Tangent function">tan</button>
@@ -485,7 +529,7 @@
       </div>
 
       <div class="kb-section-label">Number theory</div>
-      <div class="kb-row">
+      <div class="kb-row" id="kbSectionNumberTheory">
         <button class="kb fn" onclick="K.fn('gcd')" title="Greatest common divisor">gcd</button>
         <button class="kb fn" onclick="K.fn('lcm')" title="Least common multiple">lcm</button>
         <button class="kb fn" onclick="K.fn('mod')" title="Modulo">mod</button>
@@ -498,13 +542,15 @@
       </div>
 
       <div class="kb-section-label">Letters &amp; symbols</div>
-      <div id="qwerty"></div>
-      <div class="kb-row" style="margin-top:6px">
-        <button class="kb var" onclick="K.cmd('\\alpha')" title="Alpha — a Greek letter, usable as a variable">α</button>
-        <button class="kb var" onclick="K.cmd('\\beta')" title="Beta — a Greek letter, usable as a variable">β</button>
-        <button class="kb var" onclick="K.cmd('\\lambda')" title="Lambda — a Greek letter, usable as a variable">λ</button>
-        <button class="kb var" onclick="K.cmd('\\mu')" title="Mu — a Greek letter, usable as a variable">μ</button>
-        <button class="kb var" onclick="K.cmd('\\omega')" title="Omega — a Greek letter, usable as a variable">ω</button>
+      <div id="kbSectionLetters" style="display:flex; flex-direction:column; gap:8px">
+        <div id="qwerty"></div>
+        <div class="kb-row" style="margin-top:6px">
+          <button class="kb var" onclick="K.cmd('\\alpha')" title="Alpha — a Greek letter, usable as a variable">α</button>
+          <button class="kb var" onclick="K.cmd('\\beta')" title="Beta — a Greek letter, usable as a variable">β</button>
+          <button class="kb var" onclick="K.cmd('\\lambda')" title="Lambda — a Greek letter, usable as a variable">λ</button>
+          <button class="kb var" onclick="K.cmd('\\mu')" title="Mu — a Greek letter, usable as a variable">μ</button>
+          <button class="kb var" onclick="K.cmd('\\omega')" title="Omega — a Greek letter, usable as a variable">ω</button>
+        </div>
       </div>
 
     </div>
@@ -541,22 +587,22 @@
 
       <div class="kb-section-label">Connectives</div>
       <div class="kb-row">
-        <button class="kb op" onclick="LK.cmd('\\neg')" title="Negation (NOT)">¬</button>
-        <button class="kb op" onclick="LK.cmd('\\wedge')" title="Conjunction (AND)">∧</button>
-        <button class="kb op" onclick="LK.cmd('\\vee')" title="Disjunction (OR)">∨</button>
-        <button class="kb op" onclick="LK.cmd('\\oplus')" title="Exclusive or (XOR)">⊕</button>
-        <button class="kb op" onclick="LK.write('⊼')" title="Not and (NAND)">⊼</button>
-        <button class="kb op" onclick="LK.write('⊽')" title="Not or (NOR)">⊽</button>
-        <button class="kb op" onclick="LK.cmd('\\to')" title="Implies">→</button>
-        <button class="kb op" onclick="LK.cmd('\\leftrightarrow')" title="If and only if">↔</button>
+        <button class="kb op" data-tour="connectives" onclick="LK.cmd('\\neg')" title="Negation (NOT)">¬</button>
+        <button class="kb op" data-tour="connectives" onclick="LK.cmd('\\wedge')" title="Conjunction (AND)">∧</button>
+        <button class="kb op" data-tour="connectives" onclick="LK.cmd('\\vee')" title="Disjunction (OR)">∨</button>
+        <button class="kb op" data-tour="connectives" onclick="LK.cmd('\\oplus')" title="Exclusive or (XOR)">⊕</button>
+        <button class="kb op" data-tour="connectives" onclick="LK.write('⊼')" title="Not and (NAND)">⊼</button>
+        <button class="kb op" data-tour="connectives" onclick="LK.write('⊽')" title="Not or (NOR)">⊽</button>
+        <button class="kb op" data-tour="connectives" onclick="LK.cmd('\\to')" title="Implies">→</button>
+        <button class="kb op" data-tour="connectives" onclick="LK.cmd('\\leftrightarrow')" title="If and only if">↔</button>
         <div class="kb-sep"></div>
         <button class="kb op" onclick="LK.cmd('\\exists')" title="There exists">∃</button>
         <button class="kb op" onclick="LK.cmd('\\forall')" title="For all">∀</button>
         <button class="kb op" onclick="LK.cmd('\\in')" title="Element of — e.g. exists n in N(...)">∈</button>
       </div>
 
-      <div class="kb-section-label">Domains &amp; lists</div>
-      <div class="kb-row">
+      <div class="kb-section-label">Domains &amp; sets</div>
+      <div class="kb-row" id="kbSectionDomains">
         <button class="kb var" onclick="LK.write('ℕ')" title="Natural numbers (0, 1, 2, ...)">ℕ</button>
         <button class="kb var" onclick="LK.write('ℤ')" title="Integers (..., -1, 0, 1, ...) — same as no domain at all">ℤ</button>
         <button class="kb var" onclick="LK.write('ℝ')" title="Real numbers — too many to search, so a quantifier over ℝ needs an explicit =True/=False">ℝ</button>
@@ -566,7 +612,7 @@
       </div>
 
       <div class="kb-section-label">Values &amp; comparisons</div>
-      <div class="kb-row">
+      <div class="kb-row" id="kbSectionValues">
         <button class="kb special" onclick="LK.type('True')" title="The literal value True">True</button>
         <button class="kb special" onclick="LK.type('False')" title="The literal value False">False</button>
         <button class="kb op" onclick="LK.type('=')" title="Equals — used in comparisons (5=5) and assignments (A=True)">=</button>
@@ -579,7 +625,7 @@
       </div>
 
       <div class="kb-section-label">Numbers &amp; algebra</div>
-      <div class="kb-row">
+      <div class="kb-row" id="kbSectionNumbersAlgebra">
         <button class="kb num" onclick="LK.type('7')" title="Digit 7">7</button>
         <button class="kb num" onclick="LK.type('8')" title="Digit 8">8</button>
         <button class="kb num" onclick="LK.type('9')" title="Digit 9">9</button>
@@ -599,11 +645,11 @@
         <button class="kb op" onclick="LK.cmd('^')" title="Power">xʸ</button>
         <button class="kb op" onclick="LK.type('(')" title="Open parenthesis">(</button>
         <button class="kb op" onclick="LK.type(')')" title="Close parenthesis">)</button>
-        <button class="kb op" onclick="LK.type(',')" title="Separate list values, e.g. L={1,2,3}">,</button>
+        <button class="kb op" onclick="LK.type(',')" title="Separate set values, e.g. L={1,2,3}">,</button>
       </div>
 
       <div class="kb-section-label">Functions — for use inside a comparison, e.g. sin(x)=2</div>
-      <div class="kb-row">
+      <div class="kb-row" id="kbSectionLogicFunctions">
         <button class="kb fn" onclick="LK.type('sin(')" title="Sine function">sin</button>
         <button class="kb fn" onclick="LK.type('cos(')" title="Cosine function">cos</button>
         <button class="kb fn" onclick="LK.type('tan(')" title="Tangent function">tan</button>
@@ -613,12 +659,14 @@
       </div>
 
       <div class="kb-section-label">Uppercase letters — propositions (A=True, ...)</div>
-      <div class="kb-row" id="logicLettersUpper"></div>
+      <div id="kbSectionLogicLetters" style="display:flex; flex-direction:column; gap:8px">
+        <div class="kb-row" id="logicLettersUpper"></div>
 
-      <div class="kb-section-label">Lowercase letters — variables (used in n^2=4, x&gt;5, ...)</div>
-      <div class="kb-row" id="logicLettersLower"></div>
+        <div class="kb-section-label">Lowercase letters — variables (used in n^2=4, x&gt;5, ...)</div>
+        <div class="kb-row" id="logicLettersLower"></div>
+      </div>
 
-      <div class="kb-row" style="margin-top:6px">
+      <div class="kb-row" id="kbSectionLogicNav" style="margin-top:6px">
         <button class="kb" onclick="LK.left()" title="Move cursor left">←</button>
         <button class="kb" onclick="LK.right()" title="Move cursor right">→</button>
         <div class="kb-sep"></div>
@@ -641,23 +689,23 @@
   </div>
 </div>
 
-<!-- ── Guided tour modal ── -->
-<div class="modal-overlay" id="tourModal" onclick="if(event.target===this)closeTour()">
-  <div class="modal tour-modal">
-    <div class="modal-hdr">
-      <h2 id="tourTitle">Tour</h2>
-      <button class="modal-close" onclick="closeTour()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div id="tourBody"><!-- filled by JS --></div>
-      <div class="tour-dots" id="tourDots"><!-- filled by JS --></div>
-      <div class="tour-nav">
-        <button class="btn" id="tourSkipBtn" onclick="closeTour()">Skip</button>
-        <div class="tour-nav-right">
-          <button class="btn" id="tourBackBtn" onclick="tourBack()">Back</button>
-          <button class="btn tour-next" id="tourNextBtn" onclick="tourNext()">Next</button>
-        </div>
-      </div>
+<!-- ── Guided tour: dims the page, draws a highlight box + arrow at the
+     relevant part of the UI, and shows a small popup next to it. Step 1 is
+     centered instead (no anchor to point at yet). ── -->
+<div class="tour-overlay" id="tourOverlay"></div>
+<div class="tour-highlight" id="tourHighlight"></div>
+<div class="tour-arrow" id="tourArrow"></div>
+<div class="tour-popup" id="tourPopup">
+  <button class="tour-popup-close" onclick="closeTour()" title="Close">✕</button>
+  <div class="tour-popup-eyebrow" id="tourEyebrow"></div>
+  <div class="tour-popup-title" id="tourPopupTitle"></div>
+  <div class="tour-popup-body" id="tourPopupBody"></div>
+  <div class="tour-popup-footer">
+    <span class="tour-popup-progress" id="tourProgress"></span>
+    <div class="tour-popup-nav">
+      <button class="btn" id="tourSkipBtn" onclick="closeTour()">Skip</button>
+      <button class="btn" id="tourBackBtn" onclick="tourBack()">Back</button>
+      <button class="btn tour-next" id="tourNextBtn" onclick="tourNext()">Next</button>
     </div>
   </div>
 </div>
@@ -1307,45 +1355,258 @@ function closePalette() { document.getElementById('palette').classList.remove('s
    switch to before showing itself, so the tour actually shows what it's
    describing instead of just talking about it.
 ============================================================ */
+/* Each step optionally points an arrow at a real piece of the UI (`anchor`,
+   a CSS selector — matching more than one element, e.g. a group of keyboard
+   buttons, highlights their combined bounding box) and/or drives a live
+   example onto the CURRENT tab's lines (`lines`) so the step shows the thing
+   it's describing actually happening, not just a sentence about it. `mode`
+   sets Exact/Decimal and Real/Complex for the step (both default off/Real).
+   `showKeyboard`/`scrollAnchor` force the docked keyboard open (needed on
+   mobile, where it's hidden until a line is focused — see suppressNativeKeyboard
+   elsewhere) and scroll the anchored section into view within it. Step 1 has
+   no anchor — it's centered instead, since there's nothing to point at yet. */
 const TOUR = [
-  { tab: 'algebra', title: 'Welcome', body: `This calculator has two modes: <b>Algebra</b>, for solving equations and computing expressions, and <b>Logic</b>, for evaluating True/False statements. This tour covers the essentials of both — <b>Next</b> to continue, <b>Skip</b> any time.` },
-  { tab: 'algebra', title: 'Multi-line input', body: `Type any expression or equation, then press <b>Enter</b> for a new line. Every line solves on its own — try typing <code>2x+3=7</code>.` },
-  { tab: 'algebra', title: 'The Variables panel', body: `When a line has one clear answer, it moves into the <b>Variables</b> panel on the left instead of cluttering the line — so later lines can reuse it automatically.` },
-  { tab: 'algebra', title: 'Exact vs. Decimal', body: `<b>√ Exact</b> keeps answers like √3 symbolic. <b>≈ Decimal</b> shows 1.732050808 instead. Toggle it any time in the header.` },
-  { tab: 'algebra', title: 'Real vs. Complex', body: `In <b>ℝ Real</b> mode, <code>i</code> is just an ordinary variable and √(−1) is undefined. Switch to <b>ℂ Complex</b> to make <code>i</code> the imaginary unit.` },
-  { tab: 'algebra', title: 'The keyboard', body: `Covers common functions, number theory (gcd, mod, nCr, ...), and a full list under <b>∑ More functions…</b>. Hover — or long-press on a phone — any key to see what it does.` },
-  { tab: 'algebra', title: 'Domain-restricted equations', body: `Add a condition after a comma to check whether a solution exists in that range, instead of solving for one: <code>sin(x)=0.5, 0≤x≤2π</code>` },
-  { tab: 'logic', title: 'The Logic tab', body: `Logic evaluates statements to <b>True</b> or <b>False</b> instead of solving them — <code>5=5</code> is True. It never does plain arithmetic the way Algebra does.` },
-  { tab: 'logic', title: 'Propositions', body: `Give a letter a truth value with <code>A=True</code>, then combine them: <code>A∧B</code>, <code>¬A∨B</code>, and so on. Typing the words <b>and</b>, <b>or</b>, <b>not</b>, <b>xor</b>, <b>implies</b>, <b>iff</b> also auto-converts to the symbol.` },
-  { tab: 'logic', title: 'Quantifiers & domains', body: `<code>∃x(x>5)</code> searches for a value that works. Restrict the search with <code>∃n∈ℕ(...)</code>, <code>∈ℤ</code>, or your own list — define <code>L={1,2,3}</code> first, then use <code>∈L</code>.` },
-  { tab: 'logic', title: 'Membership tests', body: `Check membership directly, too — <code>5∈ℕ</code> evaluates straight to True, no quantifier needed.` },
-  { tab: 'algebra', title: 'That’s the tour', body: `Reopen this any time from the <b>?</b> button in the header. Happy calculating!` },
+  { tab: 'algebra', anchor: null,
+    title: 'Welcome',
+    body: `This calculator has two modes: <b>Algebra</b>, for solving equations and computing expressions, and <b>Logic</b>, for evaluating True/False statements. This tour covers the essentials of both — <b>Next</b> to continue, <b>Skip</b> at any time.` },
+
+  { tab: 'algebra', anchor: '#lines', lines: ['2x+3=7'],
+    title: 'Multi-line input',
+    body: `Type any expression or equation into a line — it solves automatically. Press <b>Add line</b> below whenever you want to start a new one.` },
+
+  { tab: 'algebra', anchor: '#varsPanel', lines: ['2x+3=7'],
+    title: 'The Variables panel',
+    body: `When a variable has one clear answer, it moves into the <b>Variables</b> panel — so it's saved for later lines to use.` },
+
+  { tab: 'algebra', anchor: '#modeToggleExact', mode: { decimal: false }, lines: ['\\sqrt{3}'],
+    title: 'Exact mode',
+    body: `In <b>Exact</b> mode, an answer like √3 keeps its precise form instead of being rounded.` },
+  { tab: 'algebra', anchor: '#modeToggleExact', mode: { decimal: true }, lines: ['\\sqrt{3}'],
+    title: 'Decimal mode',
+    body: `Switch to <b>Decimal</b> mode and the same answer is shown as a rounded number instead — 1.732050808. You can switch between the two any time at the top of the page.` },
+
+  { tab: 'algebra', anchor: '#modeToggleComplex', mode: { complex: false }, lines: ['\\sqrt{-1}', 'i^2'],
+    title: 'Real mode',
+    body: `In <b>Real</b> mode, i is just an ordinary variable — √(−1) has no answer here.` },
+  { tab: 'algebra', anchor: '#modeToggleComplex', mode: { complex: true }, lines: ['\\sqrt{-1}', 'i^2'],
+    title: 'Complex mode',
+    body: `Switch to <b>Complex</b> mode and i becomes the imaginary unit — now √(−1) = i, and i² = −1.` },
+
+  { tab: 'algebra', anchor: '.kb-grid-num', showKeyboard: true, scrollAnchor: true, lines: ['7*6'],
+    title: 'Numbers & basic operators',
+    body: `The number pad and the basic operators — addition, subtraction, multiplication, division.` },
+  { tab: 'algebra', anchor: '[data-tour="exp-roots"]', showKeyboard: true, scrollAnchor: true, lines: ['3^4', '\\sqrt{16}'],
+    title: 'Exponents & roots',
+    body: `Raise a number to a power, or take a square root — or any other root — of it.` },
+  { tab: 'algebra', anchor: '[data-tour="grouping"]', showKeyboard: true, scrollAnchor: true, lines: ['\\frac{1}{2}+\\frac{1}{3}', '\\left|-5\\right|'],
+    title: 'Grouping',
+    body: `Parentheses and brackets group parts of an expression; fractions and absolute value work the same way.` },
+  { tab: 'algebra', anchor: '[data-tour="constants"]', showKeyboard: true, scrollAnchor: true, lines: ['2\\pi', 'e^0'],
+    title: 'Constants & special keys',
+    body: `Quick access to π, e, θ, the ± symbol, and ∞ — no need to type them out by hand.` },
+  { tab: 'algebra', anchor: '.kb-side', showKeyboard: true, scrollAnchor: true, lines: ['5+5', '10-3'],
+    title: 'Navigation & Enter',
+    body: `Move the cursor left or right without touching the screen keyboard, or press Enter to jump to a new line.` },
+  { tab: 'algebra', anchor: '#kbSectionFunctions', showKeyboard: true, scrollAnchor: true, lines: ['\\sin\\left(\\frac{\\pi}{2}\\right)', 'factorial(5)'],
+    title: 'Functions',
+    body: `Trig, logarithms, and factorial — everything under <b>∑ More functions…</b> works the same way, just with a longer list.` },
+  { tab: 'algebra', anchor: '#kbSectionNumberTheory', showKeyboard: true, scrollAnchor: true, lines: ['gcd(12,18)', 'mod(7,3)'],
+    title: 'Number theory',
+    body: `Handy functions for whole-number math — greatest common divisor, least common multiple, remainders, rounding, and combinatorics.` },
+  { tab: 'algebra', anchor: '#kbSectionLetters', showKeyboard: true, scrollAnchor: true, lines: ['\\alpha+\\beta'],
+    title: 'Letters & Greek symbols',
+    body: `Every letter can be a variable — including the full alphabet and common Greek letters like α, β, λ.` },
+
+  { tab: 'algebra', anchor: '#lines', lines: ['\\sin\\left(x\\right)=0.5,0\\le x\\le2\\pi'],
+    title: 'Domain-restricted equations',
+    body: `Add a condition after a comma to check whether a solution exists in that range, instead of solving for one:` },
+
+  { tab: 'logic', anchor: '#logicLines', lines: ['5=5'],
+    title: 'The Logic tab',
+    body: `Logic evaluates statements to <b>True</b> or <b>False</b> instead of solving them. (It cannot do arithmetic like the Algebra Calculator.)` },
+
+  { tab: 'logic', anchor: '#logicLines', lines: ['A=True', 'B=False'],
+    title: 'Propositions',
+    body: `Give a letter (e.g. A) a value with <code>A=True</code> or <code>A=False</code>. That value is remembered, so it can be used in later statements.` },
+
+  { tab: 'logic', anchor: '#logicLines', lines: ['\\exists x\\left(x>5\\right)'],
+    title: '"There exists" (∃)',
+    body: `The symbol ∃ means "there exists" — it searches for at least one value that makes the statement true.` },
+  { tab: 'logic', anchor: '#logicLines', lines: ['\\forall x\\left(x^2\\ge0\\right)'],
+    title: '"For all" (∀)',
+    body: `The symbol ∀ means "for all" — it checks whether the statement holds for every possible value, not just one.` },
+  { tab: 'logic', anchor: '#logicLines', lines: ['\\exists n\\in ℕ\\left(n^2=16\\right)'],
+    title: 'Limiting the search',
+    body: `By default, the search checks every number. You can limit it to a specific group instead — <code>∈ℕ</code> for whole numbers 0,1,2,..., or <code>∈ℤ</code> for all integers, including negatives.` },
+  { tab: 'logic', anchor: '#logicLines', lines: ['L=\\left\\{1,2,3\\right\\}', '\\exists x\\in L\\left(x>2\\right)'],
+    title: 'Your own group of numbers',
+    body: `You can also define your own group of numbers to search, called a set — e.g. <code>L={1,2,3}</code> — then search only within it using <code>∈L</code>.` },
+
+  { tab: 'logic', anchor: '#logicLines', lines: ['5\\in ℕ'],
+    title: 'Membership tests',
+    body: `You can also check if a number belongs to a group directly, without searching — <code>5∈ℕ</code> just asks: is 5 a whole number? True.` },
+
+  { tab: 'logic', anchor: '[data-tour="connectives"]', showKeyboard: true, scrollAnchor: true, lines: ['A=True', 'B=False', 'A\\wedge B'],
+    title: 'Connectives',
+    body: `Combine propositions with AND (∧), OR (∨), NOT (¬), XOR (⊕), and more. Typing the words <b>and</b>, <b>or</b>, <b>not</b>, <b>xor</b>, <b>implies</b>, <b>iff</b> also auto-converts to the symbol.` },
+  { tab: 'logic', anchor: '#kbSectionDomains', showKeyboard: true, scrollAnchor: true, lines: ['5\\in ℤ'],
+    title: 'Domains & sets',
+    body: `ℕ, ℤ, ℝ, and ℂ are ready-made groups of numbers. Use { } to define your own set instead, like <code>{1,2,3}</code>.` },
+  { tab: 'logic', anchor: '#kbSectionValues', showKeyboard: true, scrollAnchor: true, lines: ['5>3'],
+    title: 'Values & comparisons',
+    body: `True, False, and the usual comparison symbols — equals, not equal, less/greater than (or equal to).` },
+  { tab: 'logic', anchor: '#kbSectionNumbersAlgebra', showKeyboard: true, scrollAnchor: true, lines: ['2\\left(3+4\\right)=14'],
+    title: 'Numbers & basic algebra',
+    body: `The number pad and basic arithmetic — used to build a comparison, like this one.` },
+  { tab: 'logic', anchor: '#kbSectionLogicFunctions', showKeyboard: true, scrollAnchor: true, lines: ['\\sin\\left(0\\right)=0'],
+    title: 'Functions',
+    body: `Trig functions, square root, and π — usable inside a comparison the same way.` },
+  { tab: 'logic', anchor: '#kbSectionLogicLetters', showKeyboard: true, scrollAnchor: true, lines: ['A=True', '\\forall n\\in ℕ\\left(n\\ge0\\right)'],
+    title: 'Letters',
+    body: `Uppercase letters (A, B, ...) hold True/False propositions. Lowercase letters (x, n, ...) are the variables used inside comparisons and quantifiers.` },
+  { tab: 'logic', anchor: '#kbSectionLogicNav', showKeyboard: true, scrollAnchor: true, lines: null,
+    title: 'Navigation & Enter',
+    body: `Move the cursor without touching the screen keyboard, or press Enter to start a new line — same as on the Algebra tab.` },
+
+  { tab: 'algebra', anchor: '#tourOpenBtn',
+    title: 'That’s the tour',
+    body: `Reopen this any time from the <b>?</b> button at the top of the page. Happy calculating!` },
 ];
 let tourIdx = 0;
+let tourSnapAlgebra = null, tourSnapLogic = null;
+
+/* Logic has no undo/redo system to borrow from (see allLogicLines' own
+   comment on why), so this is a small hand-rolled equivalent of Algebra's
+   restoreSnapshot() below — same approach: adjust line count to match,
+   write content only where it actually changed, then re-evaluate. */
+function tourSyncLogicLines(snap) {
+  let lines = allLogicLines();
+  while (lines.length > snap.length) lines.pop().remove();
+  while (allLogicLines().length < snap.length) addLogicLine('', false);
+  lines = allLogicLines();
+  snap.forEach((tex, i) => { if (lines[i]._mq.latex() !== tex) lines[i]._mq.latex(tex); });
+  renumberLogic(); evaluateLogicAll(); updateLogicStatus();
+}
 
 function openTour() {
   tourIdx = 0;
+  tourSnapAlgebra = allLines().map(l => l._mq.latex());
+  tourSnapLogic = allLogicLines().map(l => l._mq.latex());
+  document.getElementById('tourOverlay').classList.add('show');
+  document.getElementById('tourPopup').classList.add('show');
   renderTourStep();
-  document.getElementById('tourModal').classList.add('show');
 }
 function closeTour() {
-  document.getElementById('tourModal').classList.remove('show');
+  document.getElementById('tourOverlay').classList.remove('show', 'has-highlight');
+  document.getElementById('tourPopup').classList.remove('show');
+  document.getElementById('tourHighlight').classList.remove('show');
+  document.getElementById('tourArrow').classList.remove('show');
+  if (tourSnapAlgebra) restoreSnapshot(tourSnapAlgebra);
+  if (tourSnapLogic) tourSyncLogicLines(tourSnapLogic);
+  tourSnapAlgebra = tourSnapLogic = null;
+  document.body.classList.remove('kb-open');
+  setDecimal(false); setComplex(false);
   if (activeMQ) activeMQ.focus();
 }
 function tourNext() { if (tourIdx < TOUR.length - 1) { tourIdx++; renderTourStep(); } else closeTour(); }
 function tourBack() { if (tourIdx > 0) { tourIdx--; renderTourStep(); } }
+
 function renderTourStep() {
   const step = TOUR[tourIdx];
   if (step.tab && step.tab !== currentTab) setTab(step.tab);
-  document.getElementById('tourTitle').textContent = `${tourIdx + 1} / ${TOUR.length}`;
-  document.getElementById('tourBody').innerHTML =
-    `<div class="tour-step-eyebrow">${step.tab === 'logic' ? 'Logic' : 'Algebra'}</div>` +
-    `<h3 style="margin-bottom:8px">${step.title}</h3>` +
-    `<div class="tour-step-body">${step.body}</div>`;
-  document.getElementById('tourDots').innerHTML = TOUR.map((_, i) =>
-    `<span class="tour-dot${i === tourIdx ? ' active' : ''}"></span>`).join('');
+
+  setDecimal(!!(step.mode && step.mode.decimal));
+  setComplex(!!(step.mode && step.mode.complex));
+
+  // Whichever tab this step ISN'T on gets reverted back to what the sheet
+  // actually had before the tour started — otherwise a live example from an
+  // earlier step on that tab would just sit there, stale, off-screen.
+  restoreSnapshot(step.tab === 'algebra' && step.lines ? step.lines : tourSnapAlgebra);
+  tourSyncLogicLines(step.tab === 'logic' && step.lines ? step.lines : tourSnapLogic);
+
+  document.getElementById('tourEyebrow').textContent = step.tab === 'logic' ? 'Logic' : 'Algebra';
+  document.getElementById('tourPopupTitle').textContent = step.title;
+  document.getElementById('tourPopupBody').innerHTML = step.body;
+  document.getElementById('tourProgress').textContent = `${tourIdx + 1} / ${TOUR.length}`;
   document.getElementById('tourBackBtn').disabled = tourIdx === 0;
   document.getElementById('tourNextBtn').textContent = tourIdx === TOUR.length - 1 ? 'Done' : 'Next';
+
+  // Deferred one tick: setTab() above focuses the new tab's first line via
+  // its own setTimeout(0), which would otherwise toggle body.kb-open AFTER
+  // this step's own explicit setting and win the race — queuing ours after
+  // guarantees it's the one that sticks. Position reads real layout (post
+  // kb-open, since that can resize things on mobile), so it belongs here too.
+  setTimeout(() => {
+    document.body.classList.toggle('kb-open', !!step.showKeyboard);
+    tourPosition(step);
+  }, 0);
+}
+
+/* Union bounding box of every element the anchor selector matches — lets one
+   step point at a whole GROUP of keyboard buttons (e.g. every "exponents &
+   roots" key) without needing a wrapper element around them in the HTML. */
+function tourAnchorRect(step) {
+  if (!step.anchor) return null;
+  const els = [...document.querySelectorAll(step.anchor)];
+  if (!els.length) return null;
+  if (step.scrollAnchor) els[0].scrollIntoView({ block: 'nearest', behavior: 'instant' });
+  const rects = els.map(el => el.getBoundingClientRect());
+  const left = Math.min(...rects.map(r => r.left));
+  const top = Math.min(...rects.map(r => r.top));
+  const right = Math.max(...rects.map(r => r.right));
+  const bottom = Math.max(...rects.map(r => r.bottom));
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
+
+/* Draws the highlight box around the anchor and places the popup + its
+   arrow above or below it (whichever side has room), horizontally centered
+   on the anchor but clamped to stay on-screen. No anchor (step 1) just
+   centers the popup instead, with no highlight or arrow. */
+function tourPosition(step) {
+  const popup = document.getElementById('tourPopup');
+  const highlight = document.getElementById('tourHighlight');
+  const arrow = document.getElementById('tourArrow');
+  const overlay = document.getElementById('tourOverlay');
+
+  if (!step.anchor) {
+    popup.classList.add('centered');
+    highlight.classList.remove('show');
+    arrow.classList.remove('show');
+    overlay.classList.remove('has-highlight');
+    return;
+  }
+  popup.classList.remove('centered');
+
+  const rect = tourAnchorRect(step);
+  if (!rect) { highlight.classList.remove('show'); arrow.classList.remove('show'); overlay.classList.remove('has-highlight'); return; }
+
+  const pad = 6;
+  highlight.style.left = (rect.left - pad) + 'px';
+  highlight.style.top = (rect.top - pad) + 'px';
+  highlight.style.width = (rect.width + pad * 2) + 'px';
+  highlight.style.height = (rect.height + pad * 2) + 'px';
+  highlight.classList.add('show');
+  overlay.classList.add('has-highlight');
+
+  const margin = 10, gap = 16;
+  const popupWidth = popup.offsetWidth, popupHeight = popup.offsetHeight;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const spaceAbove = rect.top;
+  const placeBelow = spaceBelow >= popupHeight + gap || spaceBelow >= spaceAbove;
+  let top = placeBelow ? rect.bottom + gap : rect.top - popupHeight - gap;
+  top = Math.max(margin, Math.min(top, window.innerHeight - popupHeight - margin));
+
+  let left = rect.left + rect.width / 2 - popupWidth / 2;
+  left = Math.max(margin, Math.min(left, window.innerWidth - popupWidth - margin));
+
+  popup.style.left = left + 'px';
+  popup.style.top = top + 'px';
+
+  let arrowLeft = rect.left + rect.width / 2 - 7;
+  arrowLeft = Math.max(left + 14, Math.min(arrowLeft, left + popupWidth - 28));
+  arrow.style.left = arrowLeft + 'px';
+  arrow.style.top = (placeBelow ? top - 7 : top + popupHeight - 7) + 'px';
+  arrow.classList.add('show');
 }
 
 /* ============================================================
