@@ -165,7 +165,7 @@
     }
     .status b { color:var(--text); font-weight:600; }
 
-    /* ── Virtual keyboard (Desmos-style bottom pop-up, always docked) ── */
+    /* ── Virtual keyboard (Desmos-style bottom pop-up) ── */
     main { padding-bottom:calc(min(46vh,420px) + 24px); }
     .kb-wrap {
       position:fixed; left:0; right:0; bottom:0; z-index:30;
@@ -185,8 +185,16 @@
       max-width:960px; margin:0 auto; width:100%; box-sizing:border-box;
     }
     @media (max-width:560px) {
-      main { padding-bottom:calc(48vh + 20px); }
-      .kb-wrap { max-height:48vh; }
+      /* Desmos-style: no keyboard docked by default on mobile — tapping a
+         phone/tablet's on-screen text field would otherwise pop the OS's own
+         native keyboard UNDERNEATH this custom one (see suppressNativeKeyboard,
+         which stops that), and having ours permanently docked too just wastes
+         half the screen when no line is even focused. Shown only once a line
+         gains focus (JS toggles body.kb-open — see showMobileKeyboard). */
+      main { padding-bottom:24px; }
+      .kb-wrap { display:none; max-height:48vh; }
+      body.kb-open .kb-wrap { display:flex; }
+      body.kb-open main { padding-bottom:calc(48vh + 20px); }
       .app-row { flex-direction:column; padding:0 16px; }
       .vars-panel { width:100%; max-height:180px; overflow-y:auto; }
       .vars-list { flex-direction:row; flex-wrap:wrap; }
@@ -698,6 +706,37 @@ let knownFunctionNames = new Set();   // single-letter names with a f(x)=... def
 let primaryFuncDefLine = new Map();   // funcName -> the one line that "owns" its f(x)=... definition
 let activeMQ = null, activeLine = null;
 
+/* ── Mobile keyboard handling ──
+   Two separate problems, both from the same root cause (a MathQuill field is,
+   under the hood, a real focusable <textarea>): tapping a line used to pop the
+   phone's own native on-screen keyboard, which then covered up this app's own
+   custom math keyboard docked at the bottom.
+   1. suppressNativeKeyboard hints the OS to never show its own keyboard for
+      that textarea at all — safe to do unconditionally (desktop physical-
+      keyboard typing is untouched; the custom keyboard buttons already work
+      by calling MathQuill's JS API directly, never by simulating real
+      keystrokes into the textarea, so they don't need the OS keyboard either).
+   2. showMobileKeyboard/scheduleHideMobileKeyboard toggle body.kb-open, which
+      the mobile CSS uses to keep the custom keyboard off-screen until a line
+      is actually focused (Desmos-style), instead of permanently docked. The
+      hide is debounced because tapping a keyboard BUTTON blurs the field for
+      an instant before every K.cmd()/K.type()/etc. call re-focuses it —
+      without the delay the keyboard would flicker shut on every keypress. */
+function suppressNativeKeyboard(fieldEl) {
+  const ta = fieldEl.querySelector('textarea');
+  if (ta) ta.setAttribute('inputmode', 'none');
+}
+let mobileKbHideTimer = null;
+function showMobileKeyboard() {
+  if (mobileKbHideTimer) { clearTimeout(mobileKbHideTimer); mobileKbHideTimer = null; }
+  document.body.classList.add('kb-open');
+}
+function scheduleHideMobileKeyboard() {
+  if (mobileKbHideTimer) clearTimeout(mobileKbHideTimer);
+  mobileKbHideTimer = setTimeout(() => { document.body.classList.remove('kb-open'); mobileKbHideTimer = null; }, 200);
+}
+function isMobileViewport() { return window.matchMedia('(max-width:560px)').matches; }
+
 /* MathQuill mutates the config object it's given (rewrites .handlers into its
    own internal shape), so every field needs a fresh object — sharing one
    across fields silently breaks the handlers for every field but the first. */
@@ -894,8 +933,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // real user steps — undo must never dismantle the starting three lines.
   sheetHistory = []; hIndex = -1;
   commitHistory();   // single baseline snapshot for the first undo to land on
-  const f = document.querySelector('#lines .mq-field');
-  if (f && f.__mq) f.__mq.focus();
+  // Skip on mobile — auto-focusing here would pop the custom keyboard open
+  // immediately on load, defeating the "nothing docked until you tap a line"
+  // point of hiding it in the first place. Desktop keeps the convenience.
+  if (!isMobileViewport()) {
+    const f = document.querySelector('#lines .mq-field');
+    if (f && f.__mq) f.__mq.focus();
+  }
 
   buildLogicLetters();
   for (let i = 0; i < 3; i++) addLogicLine('', false);
@@ -1000,9 +1044,11 @@ function addLine(latex = '', focus = true) {
   fieldEl.__mq = mq;
   div._mq = mq;
   if (latex) mq.latex(latex);
+  suppressNativeKeyboard(fieldEl);
 
   fieldEl.addEventListener('focusin', () => onFocusField(mq));
   fieldEl.addEventListener('mousedown', () => onFocusField(mq));
+  fieldEl.addEventListener('focusout', scheduleHideMobileKeyboard);
   div.querySelector('.ldel').addEventListener('click', () => deleteLine(div));
 
   renumber(); evaluateAll(); updateStatus();
@@ -1014,6 +1060,7 @@ function addLine(latex = '', focus = true) {
 function onFocusField(mq) {
   activeMQ = mq;
   activeLine = mq.el().closest('.line');
+  showMobileKeyboard();
 }
 
 function deleteLine(line) {
@@ -1476,7 +1523,11 @@ function detectCircularAssignments(linesArr) {
     const name = m[1];
     // Scan only the right-hand side — scanning the whole "name=expr" string would
     // always "find" the LHS name itself and falsely flag every assignment as self-referential.
+    // A direct self-reference (r=r+1) is dropped here, not flagged as a cycle — it isn't
+    // an unresolvable dependency chain, it's a normal equation (evalExpr routes it to
+    // solveEquation, which gives "no solution" / "always true" as appropriate).
     const deps = new Set(findUnknowns(m[2]));
+    deps.delete(name);
     assignInfo.set(name, { line, deps });
   }
 
@@ -1877,6 +1928,12 @@ function evalExpr(expr, line) {
     const owner = primaryDefLine.get(asgn[1]);
     if (owner && owner !== line && Object.prototype.hasOwnProperty.call(numScope, asgn[1]))
       return solveEquation(`(${numScope[asgn[1]]})=(${asgn[2]})`);
+    // "r = r+1" isn't a definition of r in terms of itself — there's no such
+    // value — it's an equation (no solution, unless it cancels out to always
+    // true). Route it to the equation solver instead of assign(), which would
+    // otherwise hand nerdamer.setVar a self-referential value and risk the
+    // same hang detectCircularAssignments guards against for multi-line cycles.
+    if (findUnknowns(asgn[2]).includes(asgn[1])) return solveEquation(expr);
     return assign(asgn[1], asgn[2]);
   }
 
@@ -2552,7 +2609,41 @@ function rootFromExpr(expr) {
     // "Decimal" display mode: show 1.732050808 instead of sqrt(3).
     if (decimalMode) { const num = numericRootDisplay(orig); if (num) return num; }
   } catch {}
-  return { text: disp(s), tex: safeTeXStr(s), real: !/\bi\b/.test(s) };
+  return { text: reorderComplexRealFirst(disp(s)), tex: reorderComplexRealFirst(safeTeXStr(s)), real: !/\bi\b/.test(s) };
+}
+
+/* nerdamer's own term ordering for a complex result is inconsistent — a root
+   like "1+2*i" comes out real-first, but "-2*i+1" (same shape, different
+   sign) comes out imaginary-first — unlike the real-first convention used
+   everywhere else in this file (complexTeX, fmtMath). Splits on top-level
+   +/- (respecting both ( )/{ } nesting, so this works on plain text AND TeX)
+   and moves any non-"i" terms ahead of any "i" terms; a no-op when the
+   expression is purely real or purely imaginary (nothing to reorder). */
+function reorderComplexRealFirst(str) {
+  const terms = []; let depth = 0, cur = '', sign = '+';
+  for (const ch of str) {
+    if (ch === '(' || ch === '{') depth++;
+    else if (ch === ')' || ch === '}') depth--;
+    if (depth === 0 && (ch === '+' || ch === '-')) {
+      if (cur !== '') terms.push({ sign, body: cur });
+      cur = ''; sign = ch;
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur !== '') terms.push({ sign, body: cur });
+  if (terms.length < 2) return str;
+  // Not \bi\b: a digit run counts as a "word" character too, so "2i" (what
+  // disp()'s \cdot-stripping actually produces, e.g. "2 \cdot i" → "2i") has
+  // no \b between the 2 and the i — need "not preceded/followed by a LETTER"
+  // specifically, not "not a word boundary".
+  const hasI = t => /(?<![a-zA-Z])i(?![a-zA-Z])/.test(t.body);
+  const realTerms = terms.filter(t => !hasI(t));
+  const imagTerms = terms.filter(t => hasI(t));
+  if (!realTerms.length || !imagTerms.length) return str;   // purely real or purely imaginary — leave alone
+  return [...realTerms, ...imagTerms]
+    .map((t, idx) => (idx === 0 ? (t.sign === '-' ? '-' : '') : t.sign) + t.body)
+    .join('');
 }
 
 /* Clean up nerdamer's approximate solutions (degree ≥ 3 fallback) */
@@ -2623,12 +2714,21 @@ function decimalLiteralsToExactFractions(expr) {
   return expr.replace(/(\d+)\.(\d+)/g, (m, intPart, fracPart) =>
     `((${intPart}${fracPart})/(1${'0'.repeat(fracPart.length)}))`);
 }
-function tryExactRational(expr) {
+function tryExactRational(expr, val) {
   try {
     nerdExact();
     const s = nerdamer(decimalLiteralsToExactFractions(expr));
     const dstr = disp(s.toString());
     if (!/^-?\d+$/.test(dstr) && !/^-?\d+\/\d+$/.test(dstr)) return null;
+    // nerdamer doesn't always agree with mathjs's conventions for the same call —
+    // e.g. mod() is truncated in nerdamer but floored in mathjs (mod(-7,3): -1 vs
+    // the correct 2) — so cross-check against the already-trusted mathjs value
+    // (same guard tryExactForm below already does) before trusting nerdamer's.
+    if (val !== undefined) {
+      const valRe = val && val.isComplex ? val.re : val;
+      const checkRe = math.evaluate(dstr);
+      if (typeof checkRe !== 'number' || !isFinite(checkRe) || Math.abs(checkRe - valRe) > 1e-9) return null;
+    }
     return { tex: safeTeX(s), text: dstr, cls: 'num', raw: s.toString() };
   } catch { return null; }
 }
@@ -2756,8 +2856,10 @@ function plainExpr(expr) {
           // which is right for floating-point noise but wrong for a
           // deliberately precise decimal literal (1/3.3333333333 is close
           // to but not equal to 3/10 — snapping to 3/10 is simply incorrect).
-          const rational = tryExactRational(expr);
+          const rational = tryExactRational(expr, val);
           if (rational) return rational;
+          const trigExact = tryTrigInverseExact(expr, val);
+          if (trigExact) return trigExact;
           const exact = tryExactForm(expr, val);
           if (exact) return exact;
         }
@@ -2767,7 +2869,7 @@ function plainExpr(expr) {
         if (!complexMode && Math.abs(val.im) > 1e-12)
           return { text: 'This needs an imaginary number — turn on ℂ Complex mode (top right) to see it.', cls: 'err' };
         if (!decimalMode) {
-          const rational = tryExactRational(expr);
+          const rational = tryExactRational(expr, val);
           if (rational) return rational;
           const exact = tryExactForm(expr, val);
           if (exact) return exact;
@@ -3113,6 +3215,44 @@ function tryAbsImpossible(lhs, rhs) {
   return null;
 }
 
+/* The "unit circle" special angles — every (input, exact-angle) pair a
+   trig class actually asks students to know by heart. Checked before falling
+   back to a decimal so "sin(x)=1" solves to the exact π/2 instead of
+   1.570796327, same as the exponential-inverse path already does for e^x=10. */
+const EXACT_TRIG_INVERSES = {
+  asin: [[0, '0'], [1, 'pi/2'], [-1, '-pi/2'], [0.5, 'pi/6'], [-0.5, '-pi/6'],
+    [Math.SQRT2 / 2, 'pi/4'], [-Math.SQRT2 / 2, '-pi/4'], [Math.sqrt(3) / 2, 'pi/3'], [-Math.sqrt(3) / 2, '-pi/3']],
+  acos: [[1, '0'], [-1, 'pi'], [0, 'pi/2'], [0.5, 'pi/3'], [-0.5, '(2*pi)/3'],
+    [Math.SQRT2 / 2, 'pi/4'], [-Math.SQRT2 / 2, '(3*pi)/4'], [Math.sqrt(3) / 2, 'pi/6'], [-Math.sqrt(3) / 2, '(5*pi)/6']],
+  atan: [[0, '0'], [1, 'pi/4'], [-1, '-pi/4'], [1 / Math.sqrt(3), 'pi/6'], [-1 / Math.sqrt(3), '-pi/6'],
+    [Math.sqrt(3), 'pi/3'], [-Math.sqrt(3), '-pi/3']],
+};
+function exactTrigInverse(fn, c) {
+  const table = EXACT_TRIG_INVERSES[fn === 'sin' ? 'asin' : fn === 'cos' ? 'acos' : 'atan'];
+  for (const [target, expr] of table) if (Math.abs(c - target) < 1e-9) return expr;
+  return null;
+}
+
+/* asin(1), acos(0), atan(1), … typed directly as a plain expression (not
+   inside an equation) hit the same "no known exact value" gap — nerdamer
+   doesn't know these either, so tryExactForm's usual nerdamer-recheck below
+   would just get its OWN unevaluated "asin(1)" echoed back and mistake that
+   for a legitimate exact form (the visible symptom: arcsin/arccos/arctan
+   looked like they "didn't evaluate at all"). Handled as its own step, ahead
+   of tryExactForm, for exactly the bare-call case ("asin(1)", not
+   "asin(1)+2") — a matching special angle gets its exact π-fraction, and
+   anything else gets the plain decimal `val` already computed by the caller,
+   never nerdamer's unhelpful echo. */
+function tryTrigInverseExact(expr, val) {
+  const m = stripOuter(expr).match(/^(asin|acos|atan)\((.+)\)$/);
+  if (!m) return null;
+  let c;
+  try { c = math.evaluate(stripOuter(m[2]), numScope); } catch { return null; }
+  if (typeof c !== 'number' || !isFinite(c)) return null;
+  const exact = exactTrigInverse(m[1] === 'asin' ? 'sin' : m[1] === 'acos' ? 'cos' : 'tan', c);
+  return exact ? plainExpr(exact) : { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
+}
+
 /* sin(y)=1, cos(y)=0.5, tan(y)=2, etc. — give the one principal answer
    instead of Newton's method finding a pile of periodic repeats. In Complex
    mode, sin/cos targets outside [-1,1] (e.g. sin(x)=2) have no real answer
@@ -3136,6 +3276,11 @@ function trySimpleTrigInverse(lhs, rhs, v) {
   const outOfRealRange = (fn === 'sin' || fn === 'cos') && Math.abs(c) > 1;
   if (outOfRealRange && !complexMode)
     return { text: `No real number solves this — ${fn} only ever gives values between −1 and 1. Try ℂ Complex mode to see a complex answer.`, cls: null };
+
+  if (!outOfRealRange) {
+    const exact = exactTrigInverse(fn, c);
+    if (exact) { registerKnownValue(v, exact); return { text: null }; }
+  }
 
   const val = outOfRealRange
     ? (fn === 'sin' ? math.asin(c) : math.acos(c))       // math.js promotes to Complex here
@@ -3377,12 +3522,17 @@ function latexToExpr(tex, complex) {
       case 'sigma': case 'phi': case 'varphi': case 'chi': case 'psi': case 'omega':
         return name;
       case 'sin': case 'cos': case 'tan': case 'sec': case 'csc': case 'cot':
-      case 'arcsin': case 'arccos': case 'arctan':
       case 'sinh': case 'cosh': case 'tanh':
       case 'sign': case 'floor': case 'ceil': case 'round':
       case 'gcd': case 'lcm': case 'mod': case 'det': case 'factorial':
       case 'factor': case 'expand': case 'simplify':
         return name + parseArg();
+      // math.js/nerdamer only know the "a-" spelling (asin, not arcsin) —
+      // without this remap, "\arcsin(1)" reaches math.evaluate as a
+      // function name it's never heard of and just echoes back unevaluated.
+      case 'arcsin': return 'asin' + parseArg();
+      case 'arccos': return 'acos' + parseArg();
+      case 'arctan': return 'atan' + parseArg();
       case 'nCr': return 'combinations' + parseArg();
       case 'nPr': return 'permutations' + parseArg();
       case 'taylor': return 'taylor' + parseArg();
@@ -3622,7 +3772,12 @@ function complexTeX(v) {
   if (v.im === 0) return fmtNumTeX(v.re);
   const absIm = Math.abs(v.im);
   const imStr = absIm === 1 ? 'i' : `${fmtNum(absIm)}i`;
-  if (v.re === 0) return (v.im < 0 ? '-' : '') + imStr;
+  // Complex exponentiation ((1+i)^2, etc.) routes through mathjs's polar-form
+  // math, which leaves the "should be exactly 0" real part as floating-point
+  // noise (~1e-16) — an exact-equality check misses that and shows "0 + 2i"
+  // instead of the clean "2i". Same tolerance fmtNum already uses to snap a
+  // near-integer.
+  if (Math.abs(v.re) < 1e-10) return (v.im < 0 ? '-' : '') + imStr;
   return `${fmtNum(v.re)} ${v.im >= 0 ? '+' : '-'} ${imStr}`;
 }
 function fmtMath(v) {
@@ -3636,7 +3791,9 @@ function fmtMath(v) {
     if (v.im === 0) return fmtNum(v.re);
     const absIm = Math.abs(v.im);
     const imStr = absIm === 1 ? 'i' : `${fmtNum(absIm)}i`;
-    if (v.re === 0) return (v.im < 0 ? '−' : '') + imStr;
+    // Same floating-point-noise tolerance as complexTeX above — (1+i)^2's
+    // "should be exactly 0" real part comes back as ~1e-16, not 0.
+    if (Math.abs(v.re) < 1e-10) return (v.im < 0 ? '−' : '') + imStr;
     return `${fmtNum(v.re)} ${v.im >= 0 ? '+' : '−'} ${imStr}`;
   }
   try { return JSON.stringify(v); } catch { return String(v); }
@@ -3685,7 +3842,11 @@ function makeLogicMQConfig() {
   return {
     spaceBehavesLikeTab: true,
     autoCommands: 'neg wedge vee oplus to leftrightarrow exists forall le ge neq sqrt pi',
-    autoOperatorNames: 'sin cos tan ln',
+    // Logic reuses Algebra's own latexToExpr+math.evaluate pipeline (see
+    // logicEvalArith below), which already understands \gcd, \mod, etc. —
+    // this list was just missing them, so typing "mod(n,2)" as plain text
+    // never became the \mod command and got parsed as m*o*d instead.
+    autoOperatorNames: 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh ln log exp abs sign floor ceil round gcd lcm mod factorial',
     handlers: {
       edit: mq => { autoArrow(mq, scheduleLogicEval); autoLogicWords(mq); onFocusLogicField(mq); scheduleLogicEval(); },
       enter: mq => enterFromLogic(mq),
@@ -3756,9 +3917,11 @@ function addLogicLine(latex = '', focus = true) {
   fieldEl.__mq = mq;
   div._mq = mq;
   if (latex) mq.latex(latex);
+  suppressNativeKeyboard(fieldEl);
 
   fieldEl.addEventListener('focusin', () => onFocusLogicField(mq));
   fieldEl.addEventListener('mousedown', () => onFocusLogicField(mq));
+  fieldEl.addEventListener('focusout', scheduleHideMobileKeyboard);
   div.querySelector('.ldel').addEventListener('click', () => deleteLogicLine(div));
 
   renumberLogic(); evaluateLogicAll(); updateLogicStatus();
@@ -3766,7 +3929,7 @@ function addLogicLine(latex = '', focus = true) {
   return div;
 }
 
-function onFocusLogicField(mq) { logicActiveMQ = mq; logicActiveLine = mq.el().closest('.line'); }
+function onFocusLogicField(mq) { logicActiveMQ = mq; logicActiveLine = mq.el().closest('.line'); showMobileKeyboard(); }
 
 function deleteLogicLine(line) {
   const lines = allLogicLines();
@@ -4290,7 +4453,11 @@ function logicMembershipTest(latex) {
   // typed, with nothing after "∈ℤ" yet (no colon, no parens) — never a
   // membership test; let it fall through to the normal tokenizer/pending path.
   if (/^[∃∀]/.test(norm)) return null;
-  const m = norm.match(/^(.+)∈([a-zA-Z][a-zA-Z0-9]*|[ℕℤℝℂ])$/);
+  // MathQuill auto-inserts a "\ " (→ a literal space, via logicNormalizeLatex
+  // above) after \in when the next thing typed is a letter — not before the
+  // special glyphs ℕ/ℤ/ℝ/ℂ, which is why this only showed up for custom list
+  // names. \s* absorbs it either way.
+  const m = norm.match(/^(.+)∈\s*([a-zA-Z][a-zA-Z0-9]*|[ℕℤℝℂ])$/);
   if (!m) return null;
   const exprStr = m[1].trim(), domain = m[2];
   let val;
