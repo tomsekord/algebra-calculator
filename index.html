@@ -77,7 +77,11 @@
       gap:8px; align-items:baseline;
     }
     .var-item .var-name { color:var(--green); font-style:italic; font-weight:700; flex-shrink:0; }
-    .var-item .var-val  { color:var(--blue); font-family:'Cascadia Code','Consolas',monospace; text-align:right; word-break:break-word; }
+    /* min-width:0 lets this flex child actually shrink, and the scroll keeps a
+       value too wide for the panel (a long root, a big fraction) scrollable
+       inside its own row instead of spilling out past the card's edge —
+       word-break alone can't wrap KaTeX, which lays out as unbreakable boxes. */
+    .var-item .var-val  { color:var(--blue); font-family:'Cascadia Code','Consolas',monospace; text-align:right; word-break:break-word; min-width:0; overflow-x:auto; }
     .vars-empty { font-size:.74rem; color:var(--dim); font-style:italic; }
 
     /* ── Calculator card ── */
@@ -93,7 +97,7 @@
 
     .lines { padding:12px 12px 6px; max-height:380px; overflow-y:auto; overflow-x:hidden; }
     .line {
-      display:flex; align-items:center; gap:10px; min-height:50px;
+      display:flex; flex-wrap:wrap; align-items:center; gap:10px; min-height:50px;
       padding:5px 10px; border-radius:8px; border:1px solid transparent;
       margin-bottom:4px; transition:border-color .12s,background .12s;
     }
@@ -130,8 +134,18 @@
     }
 
     .larrow { color:var(--dim); font-size:.9rem; flex-shrink:0; min-width:14px; }
+    /* A KaTeX result lays out as unbreakable inline-blocks, so word-break can't
+       wrap it and a long one simply overflowed its box, painting straight across
+       the expression to its left (2^100 is 31 exact digits) and leaving both
+       unreadable. `.line` wraps instead (see below), which drops an answer that
+       doesn't fit onto its own row; capping the width here would defeat that by
+       making the box narrower than its contents rather than letting it wrap.
+       Note: an overflow here would NOT be a substitute — setting overflow on one
+       axis forces the other to compute to `auto` as well, which then vertically
+       clipped every fraction, its numerator and denominator being taller than
+       the single-line box. */
     .lresult {
-      text-align:right; max-width:340px; flex-shrink:0; font-size:.95rem;
+      text-align:right; max-width:100%; flex-shrink:0; font-size:.95rem;
       word-break:break-word; font-family:'Cascadia Code','Consolas',monospace;
       display:flex; flex-direction:column; align-items:flex-end; gap:2px;
     }
@@ -390,7 +404,19 @@
     }
     #toast.show { opacity:1; }
 
-    @media (max-width:600px){ .lresult{ max-width:150px; } }
+    /* On a phone there isn't room for a long expression and a long answer side
+       by side: capping the answer's width just moved the problem, showing the
+       TAIL of a 31-digit number scrolled into a 150px slot, which reads as a
+       complete (and wrong) result. flex-wrap lets only the answers that don't
+       fit drop onto their own full-width row under the expression — short ones
+       (14, ½, ✓ True) still sit inline exactly as before. */
+    /* A wrapped answer sits on its own row: push it to the right so it still
+       reads as the result of the line above it rather than a new expression. */
+    .line > .lresult { margin-left:auto; }
+    /* Without a floor here the expression field (flex:1, min-width:0) gives up
+       all its space to a wide answer instead of letting that answer wrap, so
+       "123456789·987654321" collapsed to a useless "12". */
+    @media (max-width:600px){ .line > .mq-field { min-width:150px; } }
     /* visibility, not display:none — this box is now FIRST in the header, so
        collapsing it out of flow would shift Real/Complex and the tab switcher
        after it on every tab change (very visible on mobile, where each
@@ -694,6 +720,7 @@
      centered instead (no anchor to point at yet). ── -->
 <div class="tour-overlay" id="tourOverlay"></div>
 <div class="tour-highlight" id="tourHighlight"></div>
+<div class="tour-highlight" id="tourHighlight2"></div>
 <div class="tour-arrow" id="tourArrow"></div>
 <div class="tour-popup" id="tourPopup">
   <button class="tour-popup-close" onclick="closeTour()" title="Close">✕</button>
@@ -751,7 +778,11 @@ let knownVars = new Map();   // name -> {text} for the sidebar; separate from nu
 let primaryDefLine = new Map();   // varName -> the one line that "owns" plain assignment to it
 let knownFunctionNames = new Set();   // single-letter names with a f(x)=... definition on some line —
                                        // lets latexToExpr tell "f(x)" (call) apart from "f*(x)" (multiply)
+let knownSequenceNames = new Set();   // subset of the above defined via SUBSCRIPT notation (a_n = ...) —
+                                       // only those may read "a_5" as the term a(5) rather than a variable "a5"
 let primaryFuncDefLine = new Map();   // funcName -> the one line that "owns" its f(x)=... definition
+let solvedByLine = new Map();     // varName -> the line whose own evaluation first produced its value
+let currentEvalLine = null;       // the line being evaluated right now, so the above can be recorded
 let activeMQ = null, activeLine = null;
 
 /* ── Mobile keyboard handling ──
@@ -1370,11 +1401,11 @@ const TOUR = [
     title: 'Welcome',
     body: `This calculator has two modes: <b>Algebra</b>, for solving equations and computing expressions, and <b>Logic</b>, for evaluating True/False statements. This tour covers the essentials of both — <b>Next</b> to continue, <b>Skip</b> at any time.` },
 
-  { tab: 'algebra', anchor: '#lines', lines: ['2x+3=7'],
+  { tab: 'algebra', anchor: '#lines', alsoHighlight: '#varsPanel h2, #varsList', lines: ['2x+3=7'],
     title: 'Multi-line input',
     body: `Type any expression or equation into a line — it solves automatically. Press <b>Add line</b> below whenever you want to start a new one.` },
 
-  { tab: 'algebra', anchor: '#varsPanel', lines: ['2x+3=7'],
+  { tab: 'algebra', anchor: '#varsPanel h2, #varsList', lines: ['2x+3=7'],
     title: 'The Variables panel',
     body: `When a variable has one clear answer, it moves into the <b>Variables</b> panel — so it's saved for later lines to use.` },
 
@@ -1392,18 +1423,15 @@ const TOUR = [
     title: 'Complex mode',
     body: `Switch to <b>Complex</b> mode and i becomes the imaginary unit — now √(−1) = i, and i² = −1.` },
 
-  { tab: 'algebra', anchor: '.kb-grid-num', showKeyboard: true, scrollAnchor: true, lines: ['7*6'],
+  { tab: 'algebra', anchor: '.kb-grid-num', showKeyboard: true, scrollAnchor: true, lines: ['7\\cdot6'],
     title: 'Numbers & basic operators',
     body: `The number pad and the basic operators — addition, subtraction, multiplication, division.` },
   { tab: 'algebra', anchor: '[data-tour="exp-roots"]', showKeyboard: true, scrollAnchor: true, lines: ['3^4', '\\sqrt{16}'],
     title: 'Exponents & roots',
     body: `Raise a number to a power, or take a square root — or any other root — of it.` },
-  { tab: 'algebra', anchor: '[data-tour="grouping"]', showKeyboard: true, scrollAnchor: true, lines: ['\\frac{1}{2}+\\frac{1}{3}', '\\left|-5\\right|'],
-    title: 'Grouping',
-    body: `Parentheses and brackets group parts of an expression; fractions and absolute value work the same way.` },
-  { tab: 'algebra', anchor: '[data-tour="constants"]', showKeyboard: true, scrollAnchor: true, lines: ['2\\pi', 'e^0'],
-    title: 'Constants & special keys',
-    body: `Quick access to π, e, θ, the ± symbol, and ∞ — no need to type them out by hand.` },
+  { tab: 'algebra', anchor: '[data-tour="grouping"], [data-tour="constants"]', showKeyboard: true, scrollAnchor: true, lines: ['\\frac{1}{2}+\\frac{1}{3}', '2\\pi'],
+    title: 'Grouping & constants',
+    body: `Parentheses, brackets, fractions, and absolute value group parts of an expression; π, e, θ, ±, and ∞ save you typing them out by hand.` },
   { tab: 'algebra', anchor: '.kb-side', showKeyboard: true, scrollAnchor: true, lines: ['5+5', '10-3'],
     title: 'Navigation & Enter',
     body: `Move the cursor left or right without touching the screen keyboard, or press Enter to jump to a new line.` },
@@ -1419,13 +1447,13 @@ const TOUR = [
 
   { tab: 'algebra', anchor: '#lines', lines: ['\\sin\\left(x\\right)=0.5,0\\le x\\le2\\pi'],
     title: 'Domain-restricted equations',
-    body: `Add a condition after a comma to check whether a solution exists in that range, instead of solving for one:` },
+    body: `Add a condition after a comma to check whether a solution exists in that range, instead of solving for one.` },
 
   { tab: 'logic', anchor: '#logicLines', lines: ['5=5'],
     title: 'The Logic tab',
     body: `Logic evaluates statements to <b>True</b> or <b>False</b> instead of solving them. (It cannot do arithmetic like the Algebra Calculator.)` },
 
-  { tab: 'logic', anchor: '#logicLines', lines: ['A=True', 'B=False'],
+  { tab: 'logic', anchor: '#logicLines', alsoHighlight: '#logicVarsPanel h2, #logicVarsList', lines: ['A=True', 'B=False'],
     title: 'Propositions',
     body: `Give a letter (e.g. A) a value with <code>A=True</code> or <code>A=False</code>. That value is remembered, so it can be used in later statements.` },
 
@@ -1468,6 +1496,10 @@ const TOUR = [
     title: 'Navigation & Enter',
     body: `Move the cursor without touching the screen keyboard, or press Enter to start a new line — same as on the Algebra tab.` },
 
+  { tab: 'algebra', anchor: '#tabToggle',
+    title: 'Switching tabs',
+    body: `Use these buttons any time to switch between <b>Algebra</b> and <b>Logic</b>.` },
+
   { tab: 'algebra', anchor: '#tourOpenBtn',
     title: 'That’s the tour',
     body: `Reopen this any time from the <b>?</b> button at the top of the page. Happy calculating!` },
@@ -1500,6 +1532,7 @@ function closeTour() {
   document.getElementById('tourOverlay').classList.remove('show', 'has-highlight');
   document.getElementById('tourPopup').classList.remove('show');
   document.getElementById('tourHighlight').classList.remove('show');
+  document.getElementById('tourHighlight2').classList.remove('show');
   document.getElementById('tourArrow').classList.remove('show');
   if (tourSnapAlgebra) restoreSnapshot(tourSnapAlgebra);
   if (tourSnapLogic) tourSyncLogicLines(tourSnapLogic);
@@ -1545,11 +1578,13 @@ function renderTourStep() {
 /* Union bounding box of every element the anchor selector matches — lets one
    step point at a whole GROUP of keyboard buttons (e.g. every "exponents &
    roots" key) without needing a wrapper element around them in the HTML. */
-function tourAnchorRect(step) {
-  if (!step.anchor) return null;
-  const els = [...document.querySelectorAll(step.anchor)];
+/* Union bounding box of every element ALL the given selectors match together
+   — lets a highlight span several unrelated pieces of the UI at once (e.g.
+   a keyboard button group AND the example it produces on the lines). */
+function tourRectFromSelectors(selectors, scrollFirst) {
+  const els = selectors.flatMap(sel => [...document.querySelectorAll(sel)]);
   if (!els.length) return null;
-  if (step.scrollAnchor) els[0].scrollIntoView({ block: 'nearest', behavior: 'instant' });
+  if (scrollFirst) els[0].scrollIntoView({ block: 'nearest', behavior: 'instant' });
   const rects = els.map(el => el.getBoundingClientRect());
   const left = Math.min(...rects.map(r => r.left));
   const top = Math.min(...rects.map(r => r.top));
@@ -1557,52 +1592,129 @@ function tourAnchorRect(step) {
   const bottom = Math.max(...rects.map(r => r.bottom));
   return { left, top, right, bottom, width: right - left, height: bottom - top };
 }
+function tourUnionRects(rects) {
+  const valid = rects.filter(Boolean);
+  if (!valid.length) return null;
+  const left = Math.min(...valid.map(r => r.left));
+  const top = Math.min(...valid.map(r => r.top));
+  const right = Math.max(...valid.map(r => r.right));
+  const bottom = Math.max(...valid.map(r => r.bottom));
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
+function tourAnchorRect(step) {
+  if (!step.anchor) return null;
+  return tourRectFromSelectors([step.anchor], !!step.scrollAnchor);
+}
 
-/* Draws the highlight box around the anchor and places the popup + its
-   arrow above or below it (whichever side has room), horizontally centered
-   on the anchor but clamped to stay on-screen. No anchor (step 1) just
-   centers the popup instead, with no highlight or arrow. */
+/* Returns the separate boxes to spotlight for this step, instead of one
+   bounding rectangle around all of them. Box 1 is the anchor plus whatever
+   `alsoHighlight` explicitly asks to be shown as the SAME feature (e.g. the
+   Propositions panel next to where a letter's value is typed — those two
+   are deliberately meant to read as one connected thing). Box 2, when
+   present, is the current tab's example lines, kept as its OWN separate
+   spotlight rather than merged into box 1 — merging used to draw one
+   rectangle spanning from the anchor all the way down to the lines, which
+   swept in whatever unrelated controls happened to sit between them (e.g.
+   a header mode-toggle's box used to also light up the tab switcher, Clear,
+   and ? buttons just because they shared the header row). Two independent
+   box-shadow spotlights avoid that: each only brightens its own box, with
+   dimming everywhere else, including the gap between them. Skipped for
+   keyboard steps (showKeyboard) — the anchor there is already far down in
+   the docked keyboard, nowhere near the lines above it, so a second box
+   there adds visual noise for no real benefit. */
+function tourHighlightGroups(step, primaryRect) {
+  const groupA = step.alsoHighlight
+    ? tourUnionRects([primaryRect, tourRectFromSelectors([step.alsoHighlight], false)])
+    : primaryRect;
+  const groups = [groupA];
+  if (step.lines && !step.showKeyboard) {
+    const linesSel = step.tab === 'logic' ? '#logicLines' : '#lines';
+    if (step.anchor !== linesSel) {
+      const linesRect = tourRectFromSelectors([linesSel], false);
+      if (linesRect) groups.push(linesRect);
+    }
+  }
+  return groups;
+}
+
+/* No anchor (step 1) just centers the popup, with no highlight or arrow. */
 function tourPosition(step) {
   const popup = document.getElementById('tourPopup');
   const highlight = document.getElementById('tourHighlight');
+  const highlight2 = document.getElementById('tourHighlight2');
   const arrow = document.getElementById('tourArrow');
   const overlay = document.getElementById('tourOverlay');
 
   if (!step.anchor) {
     popup.classList.add('centered');
     highlight.classList.remove('show');
+    highlight2.classList.remove('show');
     arrow.classList.remove('show');
     overlay.classList.remove('has-highlight');
     return;
   }
   popup.classList.remove('centered');
 
-  const rect = tourAnchorRect(step);
-  if (!rect) { highlight.classList.remove('show'); arrow.classList.remove('show'); overlay.classList.remove('has-highlight'); return; }
+  const primaryRect = tourAnchorRect(step);
+  if (!primaryRect) { highlight.classList.remove('show'); highlight2.classList.remove('show'); arrow.classList.remove('show'); overlay.classList.remove('has-highlight'); return; }
+  const groups = tourHighlightGroups(step, primaryRect);
+  const region = tourUnionRects(groups);
 
   const pad = 6;
-  highlight.style.left = (rect.left - pad) + 'px';
-  highlight.style.top = (rect.top - pad) + 'px';
-  highlight.style.width = (rect.width + pad * 2) + 'px';
-  highlight.style.height = (rect.height + pad * 2) + 'px';
-  highlight.classList.add('show');
+  function drawBox(el, rect) {
+    el.style.left = (rect.left - pad) + 'px';
+    el.style.top = (rect.top - pad) + 'px';
+    el.style.width = (rect.width + pad * 2) + 'px';
+    el.style.height = (rect.height + pad * 2) + 'px';
+    el.classList.add('show');
+  }
+  drawBox(highlight, groups[0]);
+  if (groups[1]) drawBox(highlight2, groups[1]); else highlight2.classList.remove('show');
   overlay.classList.add('has-highlight');
 
   const margin = 10, gap = 16;
   const popupWidth = popup.offsetWidth, popupHeight = popup.offsetHeight;
-  const spaceBelow = window.innerHeight - rect.bottom;
-  const spaceAbove = rect.top;
-  const placeBelow = spaceBelow >= popupHeight + gap || spaceBelow >= spaceAbove;
-  let top = placeBelow ? rect.bottom + gap : rect.top - popupHeight - gap;
-  top = Math.max(margin, Math.min(top, window.innerHeight - popupHeight - margin));
+  const left = Math.max(margin, Math.min(
+    primaryRect.left + primaryRect.width / 2 - popupWidth / 2,
+    window.innerWidth - popupWidth - margin));
 
-  let left = rect.left + rect.width / 2 - popupWidth / 2;
-  left = Math.max(margin, Math.min(left, window.innerWidth - popupWidth - margin));
+  function candidateTop(below) {
+    const raw = below ? region.bottom + gap : region.top - popupHeight - gap;
+    return Math.max(margin, Math.min(raw, window.innerHeight - popupHeight - margin));
+  }
+  function overlapsVertically(top, r) {
+    return r && top < r.bottom && top + popupHeight > r.top &&
+      left < r.right && left + popupWidth > r.left;
+  }
+
+  // On a cramped viewport, clamping the "ideal" side back onto the screen
+  // can land the popup right on top of the region it's supposed to be
+  // avoiding in the first place (this happened for real: a keyboard step
+  // whose anchor sits near the bottom edge got clamped back UP onto its own
+  // anchor). Never overlapping the region/anchor is the hard requirement;
+  // avoiding the live example lines (which a keyboard step's anchor is
+  // deliberately NOT unioned into `region` for — see tourHighlightRegion) is
+  // only a secondary preference between two otherwise-safe candidates.
+  const linesRect = step.lines
+    ? tourRectFromSelectors([step.tab === 'logic' ? '#logicLines' : '#lines'], false)
+    : null;
+  function badness(top) {
+    if (overlapsVertically(top, region)) return 2;
+    if (overlapsVertically(top, linesRect)) return 1;
+    return 0;
+  }
+
+  const spaceBelow = window.innerHeight - region.bottom;
+  const spaceAbove = region.top;
+  let placeBelow = spaceBelow >= popupHeight + gap || spaceBelow >= spaceAbove;
+  let top = candidateTop(placeBelow);
+  const altTop = candidateTop(!placeBelow);
+  if (badness(altTop) < badness(top)) { placeBelow = !placeBelow; top = altTop; }
 
   popup.style.left = left + 'px';
   popup.style.top = top + 'px';
 
-  let arrowLeft = rect.left + rect.width / 2 - 7;
+  let arrowLeft = primaryRect.left + primaryRect.width / 2 - 7;
   arrowLeft = Math.max(left + 14, Math.min(arrowLeft, left + popupWidth - 28));
   arrow.style.left = arrowLeft + 'px';
   arrow.style.top = (placeBelow ? top - 7 : top + popupHeight - 7) + 'px';
@@ -1677,6 +1789,7 @@ function seqDefHead(line) {
 function evaluateAll() {
   try { nerdamer.clearVars(); } catch {}
   numScope = {}; varNames = new Set(); knownVars = new Map(); primaryDefLine = new Map(); primaryFuncDefLine = new Map();
+  solvedByLine = new Map();   // rebuilt per evaluation, but kept ACROSS the passes below
 
   const linesArr = allLines();
 
@@ -1685,11 +1798,12 @@ function evaluateAll() {
   // implicit multiplication — chicken-and-egg, so this scan can't go through
   // the normal parser).
   knownFunctionNames = new Set();
+  knownSequenceNames = new Set();
   linesArr.forEach(line => {
     const m = funcDefHead(line);
     if (m) knownFunctionNames.add(m[1]);
     const sq = seqDefHead(line);
-    if (sq) knownFunctionNames.add(sq.name);
+    if (sq) { knownFunctionNames.add(sq.name); knownSequenceNames.add(sq.name); }
   });
 
   // Same "first line owns it" rule as plain variables (below): a later
@@ -1749,6 +1863,7 @@ function evaluateAll() {
       }
 
       try {
+        currentEvalLine = line;
         const out = systemResults.get(line) || evalLatex(latex, line);
         if (out && out.text != null) {
           arrow.textContent = '→';
@@ -1761,6 +1876,8 @@ function evaluateAll() {
         result.textContent = niceError(err.message);
         result.classList.add('err');
         line.classList.add('is-error');
+      } finally {
+        currentEvalLine = null;
       }
     });
   }
@@ -1812,6 +1929,11 @@ function detectCircularAssignments(linesArr) {
 
 /* Store a solved/assigned value so other lines (and the sidebar) can use it */
 function registerKnownValue(name, valueExprStr) {
+  // Remember which line a value came from. On a later pass every name in that
+  // line reads as "already known", and without this there'd be no way to tell
+  // a value the line worked out ITSELF from one handed to it by another line —
+  // see solveEquation, where the two need opposite treatment.
+  if (currentEvalLine && !solvedByLine.has(name)) solvedByLine.set(name, currentEvalLine);
   try {
     const val = math.evaluate(valueExprStr, numScope);
     if (typeof val === 'number' && isFinite(val)) {
@@ -2360,8 +2482,12 @@ function defineSequence(name, sub, rhsExpr) {
       : `geometric, common ratio ${fmtNum(info.value)}`;
     out.tex = `${out.tex} \\ \\text{(${label})}`;
     out.text = `${out.text}   (${label})`;
-    const known = knownVars.get(name);
-    if (known) { known.tex = out.tex; known.text = out.text; }
+    // The classification stays on the LINE only. Copying it into the sidebar
+    // entry as well made that row read "a(n)  a(n) = 2n+3 (arithmetic, common
+    // difference 2)" — the name repeated back inside its own value, then far
+    // too wide for a 174px panel, so it just got clipped mid-word. The sidebar
+    // keeps the compact "a(n) → 2n+3" that defineFunction already put there,
+    // matching how an ordinary f(x) definition is listed.
   }
   return out;
 }
@@ -2387,6 +2513,16 @@ function solveEquation(expr) {
   // re-solving as usual rather than flipping into a True/False verdict.
   const freeU = unknowns.filter(n => !Object.prototype.hasOwnProperty.call(numScope, n));
   if (freeU.length && freeU.length < unknowns.length) unknowns = freeU;
+  else if (!freeU.length && unknowns.length > 1) {
+    // Nothing is free any more. Either this line worked one of these values out
+    // on an earlier pass — in which case it should carry on solving for that
+    // same one — or every value came from elsewhere and the line is really just
+    // a statement to check. Falling through with all of them still listed sent
+    // it to solveForOne instead, so "p=1" followed by "p+r=6" answered with the
+    // rearrangement "p = −r+6" on the very line that had already found r = 5.
+    const mine = unknowns.filter(n => solvedByLine.get(n) === currentEvalLine);
+    unknowns = mine.length ? mine : [];
+  }
 
   if (unknowns.length === 0) {
     try {
@@ -2426,6 +2562,8 @@ function solveEquation(expr) {
     if (trig) return trig;
     const expInv = trySimpleExpInverse(lhs, rhs, v);     // e^x=10 → x=ln(10), exact — not a decimal
     if (expInv) return expInv;
+    const logInv = trySimpleLogInverse(lhs, rhs, v);     // ln(x)=1  → x=e,      exact — not a decimal
+    if (logInv) return logInv;
     return numericSolve(lhs, rhs, v);                    // non-polynomial → numeric
   }
 
@@ -2461,8 +2599,58 @@ function formatSolutions(parts, v) {
    linear systems via nerdamer.solveEquations; otherwise substitution for
    the common 2-equation/2-unknown case (e.g. x+y=5, xy=24).
 ============================================================ */
+/* Plain "name = <expr>" lines whose right-hand side works out to a number on
+   its own, as name -> that right-hand side TEXT (not the number — keeping the
+   expression means "k = 1/3" stays exact when it is substituted, instead of
+   becoming 0.3333333333). First definition of a name wins, matching the same
+   "first line owns it" rule evalExpr/primaryDefLine use, so a later "x = 7"
+   after "x = 5" stays an equation rather than silently redefining x.
+   Chained definitions (a = 2, b = a+1) resolve over a few rounds. */
+function collectPlainAssignments(linesArr) {
+  const raw = new Map();
+  for (const line of linesArr) {
+    const mq = line._mq;
+    const latex = mq ? mq.latex() : '';
+    if (!latex || !latex.trim()) continue;
+    if (/\\frac\{d(\^\{?\d+\}?)?\}\{d|\\int|\\sum|\\prod|\\lim/.test(latex)) continue;
+    if (funcDefHead(line) || seqDefHead(line)) continue;
+    let expr;
+    try { expr = latexToExpr(latex, complexMode); } catch { continue; }
+    const m = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
+    if (!m || /[+\-*/^]/.test(m[1]) || raw.has(m[1])) continue;
+    if (findUnknowns(m[2]).includes(m[1])) continue;      // self-referential (r = r+1) — an equation, not a value
+    raw.set(m[1], m[2]);
+  }
+  // Resolve references between them, then keep only the ones that really do
+  // land on a plain number once everything is filled in.
+  for (let round = 0; round < 5; round++) {
+    for (const [name, rhs] of raw) {
+      let next = rhs;
+      for (const [other, otherRhs] of raw) {
+        if (other === name) continue;
+        next = next.replace(new RegExp(`\\b${other}\\b`, 'g'), `(${otherRhs})`);
+      }
+      if (next !== rhs) raw.set(name, next);
+    }
+  }
+  const givens = new Map();
+  for (const [name, rhs] of raw) {
+    let v;
+    try { v = math.evaluate(rhs, {}); } catch { continue; }
+    if (typeof v === 'number' && isFinite(v)) givens.set(name, rhs);
+  }
+  return givens;
+}
+
+function substituteGivens(exprStr, givens) {
+  let out = exprStr;
+  for (const [name, rhs] of givens) out = out.replace(new RegExp(`\\b${name}\\b`, 'g'), `(${rhs})`);
+  return out;
+}
+
 function solveSystems(linesArr) {
   const results = new Map();
+  const givens = collectPlainAssignments(linesArr);
 
   const info = linesArr.map(line => {
     const mq = line._mq;
@@ -2481,11 +2669,16 @@ function solveSystems(linesArr) {
     if (!expr || !expr.trim()) return null;
     const eqMatch = expr.match(/(?<![=<>])=(?!=)/);
     if (!eqMatch) return null;
-    const lhs = expr.slice(0, eqMatch.index).trim();
-    const rhs = expr.slice(eqMatch.index + 1).trim();
     const asgn = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
     if (asgn && !/[+\-*/^]/.test(asgn[1])) return null;   // plain assignment, not a system equation
-    const unknowns = findUnknowns(expr);
+    // A variable given its own value on another line ("k = 3") is a KNOWN, not
+    // an unknown of this system — substitute it before counting. Without this
+    // "k=3, x+y=k, x−y=1" looked like 2 equations in 3 unknowns, so the group
+    // was written off as unsolvable and x and y were never found, even though
+    // the moment k is filled in it's an ordinary 2×2.
+    const lhs = substituteGivens(expr.slice(0, eqMatch.index).trim(), givens);
+    const rhs = substituteGivens(expr.slice(eqMatch.index + 1).trim(), givens);
+    const unknowns = findUnknowns(`${lhs}=${rhs}`);
     if (unknowns.length < 2) return null;                 // single-unknown handled by the normal solver
     return { line, lhs, rhs, unknowns };
   });
@@ -2510,10 +2703,44 @@ function solveSystems(linesArr) {
     if (comp.length < 2) continue;   // no partner equation → leave the normal per-line message
 
     const allVars = [...new Set(comp.flatMap(c => info[c].unknowns))];
-    if (allVars.length !== comp.length) continue;   // not a square system → can't uniquely solve
-
     const eqs = comp.map(c => `(${info[c].lhs})-(${info[c].rhs})`);
-    const solved = trySolveSystem(eqs, allVars);
+
+    // More equations than unknowns isn't automatically unsolvable — the extra
+    // ones are often just redundant (x+y=3, 2x+2y=6, x−y=1 still pins x and y),
+    // and when they aren't, "these contradict" is the useful thing to say. Only
+    // the exact linear solver is tried here; anything it can't take keeps the
+    // old per-line behaviour rather than claiming a system it never solved.
+    if (allVars.length !== comp.length) {
+      if (comp.length > allVars.length) {
+        const lin = solveLinearSystem(eqs, allVars);
+        if (lin && lin.kind === 'unique') {
+          allVars.forEach(v => registerKnownValue(v, lin.sol[v]));
+          for (const c of comp) results.set(info[c].line, { text: null });
+          continue;
+        }
+        if (lin && lin.kind === 'none') {
+          const out = { text: 'This system has no solution — these equations contradict each other.', cls: null };
+          for (const c of comp) results.set(info[c].line, out);
+          continue;
+        }
+      }
+      continue;   // under-determined (or nonlinear) → leave the normal per-line message
+    }
+
+    let solved = trySolveSystem(eqs, allVars);
+    if (solved === null) {
+      // nerdamer gives up on some perfectly ordinary linear systems (a
+      // contradictory one throws; a redundant one "has no distinct solution"),
+      // so fall back to plain elimination before blaming the difficulty.
+      const lin = solveLinearSystem(eqs, allVars);
+      if (lin && lin.kind === 'unique') solved = [lin.sol];
+      else if (lin && lin.kind === 'none') solved = [];
+      else if (lin && lin.kind === 'many') {
+        const out = { text: 'These equations don’t pin down a single answer — there are infinitely many solutions (one of the equations repeats what the others already say).', cls: null };
+        for (const c of comp) results.set(info[c].line, out);
+        continue;
+      }
+    }
     if (solved === null) {
       // A genuinely square system (right number of equations), just beyond what the
       // solver supports (3+ variable nonlinear systems aren't attempted) — say so
@@ -2548,9 +2775,13 @@ function solveSystems(linesArr) {
 }
 
 function trySolveSystem(eqs, vars) {
-  // Linear systems (any size) → nerdamer's own solver
+  // Linear systems (any size) → nerdamer's own solver.
+  // NOTE: solveEquations REPLACES the entries of the array it is handed with
+  // its own parsed Symbol objects, so it gets a throwaway copy — otherwise
+  // every later fallback here (and in the caller) would be handed Symbols
+  // where it expects the original equation strings, and quietly fail.
   try {
-    const r = nerdamer.solveEquations(eqs, vars);
+    const r = nerdamer.solveEquations(eqs.slice(), vars);
     if (Array.isArray(r) && r.length === vars.length && r.every(p => Array.isArray(p) && p.length === 2)) {
       const sol = {};
       for (const [v, val] of r) sol[v] = String(val);
@@ -2561,6 +2792,89 @@ function trySolveSystem(eqs, vars) {
   // Nonlinear fallback via substitution — currently 2 equations / 2 unknowns
   if (vars.length === 2 && eqs.length === 2) return solveSystem2x2(eqs, vars);
   return null;
+}
+
+/* Gaussian elimination for a LINEAR system, used only where the solvers above
+   came up empty. nerdamer.solveEquations quietly refuses a couple of cases it
+   really ought to answer — notably a system whose equations CONTRADICT each
+   other (it throws), and one with a redundant equation — which then surfaced
+   to the user as "too complex for me to solve automatically" even though the
+   honest answer is "these contradict" or a perfectly ordinary solution.
+
+   Each equation arrives already rearranged to "lhs-(rhs)", i.e. everything
+   equals zero. Coefficients are recovered by sampling rather than by parsing:
+   for a linear f, the coefficient of vᵢ is f(eᵢ)−f(0) and the constant is
+   f(0). Sampling can't tell a linear function from a nonlinear one on its own
+   though (it would happily "linearise" x²), so the reconstructed plane is
+   verified against the real expression at a scattered test point first, and
+   anything that disagrees is handed back as null.
+
+   Returns { kind:'unique', sol } | { kind:'none' } | { kind:'many' }, or null
+   when this isn't a plain linear system at all. */
+function solveLinearSystem(eqs, vars) {
+  const n = vars.length;
+  const at = pt => { const s = {}; vars.forEach(v => s[v] = pt[v] ?? 0); return s; };
+  const rows = [];
+  for (const rawEq of eqs) {
+    const eq = String(rawEq);   // tolerate a caller handing over nerdamer Symbols
+    let c0;
+    try { c0 = math.evaluate(eq, at({})); } catch { return null; }
+    if (typeof c0 !== 'number' || !isFinite(c0)) return null;
+    const coef = [];
+    for (const v of vars) {
+      let c1;
+      try { c1 = math.evaluate(eq, at({ [v]: 1 })); } catch { return null; }
+      if (typeof c1 !== 'number' || !isFinite(c1)) return null;
+      coef.push(c1 - c0);
+    }
+    // Linearity check: irrational, non-repeating sample values so a nonlinear
+    // term can't coincidentally match the fitted plane.
+    const probe = {}; vars.forEach((v, k) => probe[v] = Math.sqrt(k + 2) * (k % 2 ? -1 : 1) * 1.7);
+    let actual;
+    try { actual = math.evaluate(eq, at(probe)); } catch { return null; }
+    if (typeof actual !== 'number' || !isFinite(actual)) return null;
+    const predicted = c0 + vars.reduce((s, v, k) => s + coef[k] * probe[v], 0);
+    if (Math.abs(actual - predicted) > 1e-6 * Math.max(1, Math.abs(actual))) return null;   // not linear
+    rows.push([...coef, -c0]);   // A·x = −f(0)
+  }
+
+  // Forward elimination with partial pivoting.
+  const m = rows.length;
+  const scale = Math.max(1, ...rows.flat().map(Math.abs));
+  const EPS = 1e-9 * scale;
+  let rank = 0;
+  const pivotCol = [];
+  for (let col = 0; col < n && rank < m; col++) {
+    let best = rank;
+    for (let r = rank + 1; r < m; r++) if (Math.abs(rows[r][col]) > Math.abs(rows[best][col])) best = r;
+    if (Math.abs(rows[best][col]) < EPS) continue;          // no pivot in this column — free variable
+    [rows[rank], rows[best]] = [rows[best], rows[rank]];
+    const pv = rows[rank][col];
+    for (let c = col; c <= n; c++) rows[rank][c] /= pv;
+    for (let r = 0; r < m; r++) {
+      if (r === rank) continue;
+      const f = rows[r][col];
+      if (!f) continue;
+      for (let c = col; c <= n; c++) rows[r][c] -= f * rows[rank][c];
+    }
+    pivotCol.push(col);
+    rank++;
+  }
+  // A row of all-zero coefficients with a nonzero constant is 0 = k — the
+  // equations contradict each other and there is no solution at all.
+  for (let r = 0; r < m; r++) {
+    if (rows[r].slice(0, n).every(x => Math.abs(x) < EPS) && Math.abs(rows[r][n]) > EPS)
+      return { kind: 'none' };
+  }
+  if (rank < n) return { kind: 'many' };   // free variables remain
+
+  const sol = {};
+  pivotCol.forEach((col, r) => {
+    const x = rows[r][n];
+    const snapped = Math.abs(x - Math.round(x)) < 1e-9 ? Math.round(x) : x;
+    sol[vars[col]] = String(snapped);
+  });
+  return { kind: 'unique', sol };
 }
 
 /* Returns: an array of solutions (may be empty [] to mean "definitely no
@@ -2975,7 +3289,36 @@ function decimalLiteralsToExactFractions(expr) {
   return expr.replace(/(\d+)\.(\d+)/g, (m, intPart, fracPart) =>
     `((${intPart}${fracPart})/(1${'0'.repeat(fracPart.length)}))`);
 }
+/* nerdamer's own factorial() silently gives up and returns the call
+   unevaluated once n is big enough that a native-number loop would lose
+   exactness (mathjs's factorial() also switches to a lossy float there) —
+   but a huge factorial is still an exact, computable integer, just one
+   that needs a bignum. Capped well above anything a calculator UI is
+   useful for; the loop itself is fast even at the cap. */
+function bigFactorial(n) {
+  if (n > 10000) return null;
+  let r = 1n;
+  for (let i = 2n; i <= BigInt(n); i++) r *= i;
+  return r;
+}
 function tryExactRational(expr, val) {
+  const bareFact = expr.match(/^(?:factorial\((\d+)\)|(\d+)!)$/);
+  if (bareFact) {
+    const big = bigFactorial(parseInt(bareFact[1] || bareFact[2], 10));
+    if (big != null) { const text = big.toString(); return { tex: text, text, cls: 'num', raw: text }; }
+  }
+  // Only PURE rational arithmetic (digits, operators, parens — no function
+  // calls, constants or variables) can come back from nerdamer as a genuinely
+  // exact fraction. The moment a transcendental is involved, nerdamer
+  // evaluates it numerically in floats, so the "exact rational" it hands back
+  // is just that float rationalized — and a float that is a hair off a whole
+  // number rationalizes into something enormous and meaningless. log_10(1000)
+  // is the standard example: the float is 2.9999999999999996, which came back
+  // as 6755399441055746/2251799813685249 and passed the cross-check below
+  // (it agrees with the float to well within 1e-9 — it IS the float), so it
+  // was shown to the user instead of plain "3". Bailing out here leaves those
+  // to tryExactForm/fmtNum, which round-trip them to the clean value.
+  if (!/^[\d\s+\-*/^().,]+$/.test(expr)) return null;
   try {
     nerdExact();
     const s = nerdamer(decimalLiteralsToExactFractions(expr));
@@ -2990,7 +3333,21 @@ function tryExactRational(expr, val) {
       const checkRe = math.evaluate(dstr);
       if (typeof checkRe !== 'number' || !isFinite(checkRe) || Math.abs(checkRe - valRe) > 1e-9) return null;
     }
-    return { tex: safeTeX(s), text: dstr, cls: 'num', raw: s.toString() };
+    // Build the TeX straight from dstr rather than asking nerdamer for it.
+    // Its toTeX() renders through a double, so every exact integer past 2^53
+    // came back with its tail digits quietly wrong — 123456789·987654321 was
+    // computed correctly as …269 but DISPLAYED as …260, and 9007199254740993
+    // as …992. The rendered TeX is what the user reads, so the exact answer
+    // was being thrown away at the last step. dstr is already known to be a
+    // plain integer or a/b fraction (checked above), so this is all it needs.
+    // The sign is hoisted out in front of the fraction bar (−¼, not (−1)/4),
+    // which is how it's normally written and what nerdamer's own TeX did.
+    const neg = dstr.startsWith('-');
+    const body = neg ? dstr.slice(1) : dstr;
+    const slash = body.indexOf('/');
+    const tex = (neg ? '-' : '') +
+      (slash === -1 ? body : `\\frac{${body.slice(0, slash)}}{${body.slice(slash + 1)}}`);
+    return { tex, text: dstr, cls: 'num', raw: s.toString() };
   } catch { return null; }
 }
 
@@ -3392,7 +3749,22 @@ function evalLimit(latex) {
   // noise (e.g. 1.999999994 instead of 2) — snap results that are extremely
   // close to a whole number, since that noise is far smaller than any
   // legitimately-fractional answer would be.
-  const snap = v => Math.abs(v - Math.round(v)) < 1e-6 ? Math.round(v) : v;
+  const snap = v => {
+    if (typeof v !== 'number' || !isFinite(v)) return v;
+    const r = Math.round(v);
+    if (Math.abs(v - r) < 1e-6) return r;
+    // Same reasoning for a fractional answer. fmtNum only folds a decimal back
+    // into a fraction within 1e-9, which no finite-difference estimate ever
+    // gets: ½ arrives here as 0.5000000414, so it would print as that decimal
+    // rather than ½. Denominators are kept small — the closest fraction with
+    // d ≤ 64 to a number that ISN'T one is off by ~1e-4 at best, so matching
+    // to 1e-6 can't quietly turn an irrational limit into a tidy fraction.
+    for (let d = 2; d <= 64; d++) {
+      const n = Math.round(v * d);
+      if (n !== 0 && Math.abs(n / d - v) < 1e-6 * Math.max(1, Math.abs(v)) && Math.abs(n) <= d * 25) return n / d;
+    }
+    return v;
+  };
   const numResult = val => ({ tex: fmtNumTeX(snap(val)), text: fmtNum(snap(val)), cls: 'num' });
 
   if (!isFinite(point)) {                    // x → ±∞
@@ -3410,20 +3782,44 @@ function evalLimit(latex) {
   if (isFinite(direct)) return numResult(direct);   // continuous at the point → limit = f(point)
 
   // Indeterminate/undefined right at the point — approach from both sides.
-  const hs = [1e-2, 1e-4, 1e-6, 1e-8];
+  // The SMALLEST step is not automatically the most trustworthy sample: an
+  // expression that subtracts two nearly-equal quantities loses accuracy as h
+  // shrinks, and eventually all of it. (1−cos x)/x² is the standard example —
+  // by h=1e-8, cos x has rounded to exactly 1, so the whole thing collapses to
+  // 0 and the true answer of ½ is nowhere in sight. Comparing only the last two
+  // rungs saw 0 against 0.5 and gave up on a limit it had actually computed
+  // correctly three rungs earlier. So walk a longer ladder and look for the
+  // plateau where the value has converged but round-off hasn't taken over yet,
+  // corroborated across THREE consecutive rungs so a pair of coincidentally
+  // close samples from an oscillating function can't masquerade as convergence.
+  const hs = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-8];
   const L = hs.map(h => f(point - h));
   const R = hs.map(h => f(point + h));
   const lOK = L.every(isFinite), rOK = R.every(isFinite);
+  const plateau = arr => {
+    let best = null;
+    for (let i = 0; i + 2 < arr.length; i++) {
+      const [a, b, c] = [arr[i], arr[i + 1], arr[i + 2]];
+      if (![a, b, c].every(isFinite)) continue;
+      const scale = Math.max(1, Math.abs(a), Math.abs(b), Math.abs(c));
+      const rel = Math.max(Math.abs(a - b), Math.abs(b - c)) / scale;
+      if (!best || rel < best.rel) best = { rel, value: c };
+    }
+    return best;
+  };
   if (lOK && rOK) {
-    const lSettled = Math.abs(L[3] - L[2]) < 1e-4 * Math.max(1, Math.abs(L[3]));
-    const rSettled = Math.abs(R[3] - R[2]) < 1e-4 * Math.max(1, Math.abs(R[3]));
-    if (lSettled && rSettled) {
-      if (Math.abs(L[3] - R[3]) < 1e-4 * Math.max(1, Math.abs(L[3]), Math.abs(R[3])))
-        return numResult((L[3] + R[3]) / 2);
-      return { text: `The limit doesn’t exist — from the left it approaches ${fmtNum(L[3])}, but from the right it approaches ${fmtNum(R[3])}.`, cls: 'err' };
+    const lp = plateau(L), rp = plateau(R);
+    if (lp && rp && lp.rel < 1e-4 && rp.rel < 1e-4) {
+      if (Math.abs(lp.value - rp.value) < 1e-4 * Math.max(1, Math.abs(lp.value), Math.abs(rp.value)))
+        return numResult((lp.value + rp.value) / 2);
+      return { text: `The limit doesn’t exist — from the left it approaches ${fmtNum(lp.value)}, but from the right it approaches ${fmtNum(rp.value)}.`, cls: 'err' };
     }
   }
-  const growing = arr => arr.every(isFinite) && Math.abs(arr[3]) > Math.abs(arr[2]) && Math.abs(arr[2]) > Math.abs(arr[1]) && Math.abs(arr[3]) > 1e6;
+  const growing = arr => {
+    const n = arr.length;
+    return arr.every(isFinite) && Math.abs(arr[n - 1]) > Math.abs(arr[n - 2]) &&
+      Math.abs(arr[n - 2]) > Math.abs(arr[n - 3]) && Math.abs(arr[n - 1]) > 1e6;
+  };
   if (growing(L) || growing(R) || !lOK || !rOK) {
     if (undefinedRef) return undefinedMsg();
     const ls = Math.sign(L.slice().reverse().find(isFinite) || (L.every(v => !isFinite(v)) ? 0 : NaN));
@@ -3570,6 +3966,43 @@ function trySimpleExpInverse(lhs, rhs, v) {
 
   const valueExpr = base === 'e' ? `log(${c})` : `log(${c})/log(${base})`;
   registerKnownValue(v, valueExpr);
+  return { text: null };
+}
+
+/* ln(x)=1, log_2(x)=5, log_10(x)=3 — the mirror image of trySimpleExpInverse
+   above (x = e^c, or base^c), so Exact mode answers "e" rather than Newton's
+   2.718281828. Internally a one-argument log() IS the natural log (see disp),
+   and a based one serializes as log(v, base). Only the bare "log(v)" shape is
+   handled (not e.g. log(2v+1)), same restriction as the inverses above. */
+function trySimpleLogInverse(lhs, rhs, v) {
+  const L = stripOuter(lhs), R = stripOuter(rhs);
+  let m = L.match(/^log\((.+)\)$/), constSide = R;
+  if (!m) { m = R.match(/^log\((.+)\)$/); constSide = L; }
+  if (!m) return null;
+
+  // Split "value, base" on the single TOP-LEVEL comma, if there is one —
+  // log(x, 10)'s own argument can itself contain parenthesised commas.
+  const inner = m[1];
+  let depth = 0, comma = -1;
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    else if (ch === ',' && depth === 0) { if (comma !== -1) return null; comma = i; }
+  }
+  const argStr = comma === -1 ? inner : inner.slice(0, comma);
+  const baseStr = comma === -1 ? 'e' : inner.slice(comma + 1).trim();
+  if (stripOuter(argStr) !== v) return null;   // only bare log(v), not log(2v)
+
+  let c;
+  try { c = math.evaluate(constSide, numScope); } catch { return null; }
+  if (typeof c !== 'number' || !isFinite(c)) return null;
+  if (baseStr !== 'e') {
+    let b;
+    try { b = math.evaluate(baseStr, numScope); } catch { return null; }
+    if (typeof b !== 'number' || !isFinite(b) || b <= 0 || b === 1) return null;
+  }
+  registerKnownValue(v, `(${baseStr})^(${c})`);
   return { text: null };
 }
 
@@ -3818,6 +4251,7 @@ function latexToExpr(tex, complex) {
         // True subscripts fold into the same name (x_1 ≡ x1, f_{12} ≡ f12) —
         // handled here rather than the generic "_" branch so that a
         // subscripted FUNCTION name (f_1(x)) still gets call detection below.
+        let seqIndex = null;
         if (s[i] === '_') {
           const save = i; i++;
           const sub = stripOuter(parseArg()).replace(/[^a-zA-Z0-9]/g, '');
@@ -3825,8 +4259,16 @@ function latexToExpr(tex, complex) {
           // convention); letter subscripts keep an underscore separator instead, so a
           // subscripted name can never collide with a reserved word spelled out by
           // plain concatenation (p_i -> "p_i", not "pi"; a_n -> "a_n", not "an").
-          if (sub) name += /^\d+$/.test(sub) ? sub : ('_' + sub); else i = save;
+          // EXCEPT on a name defined as a sequence (a_n = ...), where "a_5" is the
+          // subscript notation for that sequence's 5th term — the natural way to ask
+          // for it, matching how it was defined — so it becomes the call a(5) rather
+          // than folding into an unrelated (and always-undefined) variable "a5".
+          if (sub) {
+            if (/^\d+$/.test(sub) && knownSequenceNames.has(name)) seqIndex = sub;
+            else name += /^\d+$/.test(sub) ? sub : ('_' + sub);
+          } else i = save;
         }
+        if (seqIndex !== null) { V(name + '(' + seqIndex + ')'); continue; }
         // f'(x) → the pre-computed derivative function (defineFunction sets up
         // fPRIME1/fPRIME2 alongside f; disp() turns PRIMEn back into quotes).
         let primes = 0;
@@ -4030,7 +4472,11 @@ function fmtNumTeX(x) {
   return parseFloat(x.toPrecision(10)).toString();
 }
 function complexTeX(v) {
-  if (v.im === 0) return fmtNumTeX(v.re);
+  // Same floating-point-noise tolerance the real part gets below, rather than
+  // an exact ===0: mathjs's polar-form exponentiation leaves ~1e-16 in the
+  // part that should have cancelled, so a purely real answer like (1+i)^4
+  // rendered as "-4 + 0i" — the check was simply never made symmetric.
+  if (Math.abs(v.im) < 1e-10) return fmtNumTeX(v.re);
   const absIm = Math.abs(v.im);
   const imStr = absIm === 1 ? 'i' : `${fmtNum(absIm)}i`;
   // Complex exponentiation ((1+i)^2, etc.) routes through mathjs's polar-form
@@ -4049,7 +4495,7 @@ function fmtMath(v) {
   if (v.isUnit) return v.toString();
   if (v.isMatrix) { const a = v.toArray(); const f = r => Array.isArray(r) ? '['+r.map(fmtNum).join(', ')+']' : fmtNum(r); return '['+a.map(f).join(',  ')+']'; }
   if (v.isComplex) {
-    if (v.im === 0) return fmtNum(v.re);
+    if (Math.abs(v.im) < 1e-10) return fmtNum(v.re);   // noise, not a real imaginary part — see complexTeX
     const absIm = Math.abs(v.im);
     const imStr = absIm === 1 ? 'i' : `${fmtNum(absIm)}i`;
     // Same floating-point-noise tolerance as complexTeX above — (1+i)^2's
@@ -4065,6 +4511,13 @@ function niceError(msg = '') {
   if (bad) return `I don't recognize "${bad[1]}" — check the spelling or pick it from the keyboard below.`;
   if (/unexpected|cannot read prop|value expected|end of expression|parenthesis/i.test(m)) return 'That doesn’t look like valid math — check for typos, an empty exponent or root box, or a missing symbol.';
   if (/cannot evaluate/i.test(m)) return 'I couldn’t work that out — check your expression.';
+  // "index: 0" means the call carried NO argument at all — an empty √ box (or
+  // an unfilled sin(), gcd()… ) that's still being typed, not a deliberate
+  // wrong-arity call. That deserves the same gentle "you've left a box empty"
+  // wording an empty exponent already gets; the arity wording below ("sqrt was
+  // called with the wrong number of values") reads like a different mistake.
+  if (/too few arguments in function/i.test(m) && /index:\s*0\b/.test(m))
+    return 'That doesn’t look like valid math — check for typos, an empty exponent or root box, or a missing symbol.';
   const arity = m.match(/too (?:few|many) arguments in function (\w+)/i);
   if (arity) return `${disp(arity[1])} was called with the wrong number of values — check how many you're passing in.`;
   if (/maximum call stack/i.test(m)) return 'That function calls itself — make sure its formula doesn’t use its own name.';
@@ -4268,7 +4721,7 @@ function logicNormalizeLatex(latex) {
 function logicPrettySnippet(raw) {
   try {
     const e = latexToExpr(raw, complexMode);
-    if (e && e.trim()) return e.replace(/\bpi\b/g, 'π');
+    if (e && e.trim()) return disp(e).replace(/\bpi\b/g, 'π');
   } catch {}
   return raw;
 }
@@ -4282,7 +4735,7 @@ function logicPrettySnippet(raw) {
    turning it into the same "undefined symbol" failure any other unassigned
    letter would produce, instead of silently succeeding as a math constant. */
 function logicEvalArith(latex) {
-  const expr = latexToExpr(latex, false).replace(/\be\b/g, 'eLogicUnbound');
+  const expr = latexToExpr(latex, complexMode).replace(/\be\b/g, 'eLogicUnbound');
   return math.evaluate(expr, {});
 }
 
@@ -4614,7 +5067,15 @@ function logicEvalNode(node, scope) {
       const computed = tryEvalQuantifier(node, scope);
       if (computed != null) return computed;
       const domain = node.domain;
-      const shown = node.prettyDisplay || node.display;
+      // Every one of these messages tells the user to write this expression out
+      // on a line of its own, so it has to be the text they'd actually type —
+      // which is `display`, the same string the scope lookup keys off. Only
+      // fall back to prettyDisplay when raw LaTeX is genuinely still in there
+      // (\sqrt, \frac, …) and would look like gibberish quoted back at them;
+      // it goes through latexToExpr, which re-parenthesises as it converts, so
+      // for an already-clean body it just turns "x^2≥0" into "x^(2)≥0" — the
+      // one form that is neither what they typed nor what the lookup matches.
+      const shown = /\\/.test(node.display) ? (node.prettyDisplay || node.display) : node.display;
       if (domain === 'ℝ' || domain === 'ℂ')
         throw new Error(`${domain} has too many values to search — give "${shown}" a value directly, e.g. "${shown}=True".`);
       if (domain && domain !== 'ℕ' && domain !== 'ℤ' && !logicListScope.has(domain))
@@ -4625,14 +5086,22 @@ function logicEvalNode(node, scope) {
       let l, r;
       try { l = logicEvalArith(node.left); } catch { throw new Error(`Couldn't work out "${logicPrettySnippet(node.left)}".`); }
       try { r = logicEvalArith(node.right); } catch { throw new Error(`Couldn't work out "${logicPrettySnippet(node.right)}".`); }
-      if (typeof l !== 'number' || typeof r !== 'number') throw new Error('Comparisons need plain numbers on both sides.');
+      // In Complex mode, i is a genuine imaginary unit again — l/r can come
+      // back as mathjs Complex objects (re/im), not plain numbers. = and !=
+      // still make sense there (compare both parts); <, >, <=, >= don't.
+      const toParts = v => v && v.isComplex ? { re: v.re, im: v.im } : (typeof v === 'number' ? { re: v, im: 0 } : null);
+      const lp = toParts(l), rp = toParts(r);
+      if (!lp || !rp) throw new Error('Comparisons need plain numbers on both sides.');
+      if ((lp.im !== 0 || rp.im !== 0) && node.cmp !== '=' && node.cmp !== '!=')
+        throw new Error('Only = and ≠ can compare complex numbers — <, >, ≤, ≥ need plain real numbers.');
+      const equal = Math.abs(lp.re - rp.re) < 1e-9 && Math.abs(lp.im - rp.im) < 1e-9;
       switch (node.cmp) {
-        case '=': return Math.abs(l - r) < 1e-9;
-        case '!=': return Math.abs(l - r) >= 1e-9;
-        case '<': return l < r;
-        case '>': return l > r;
-        case '<=': return l <= r;
-        case '>=': return l >= r;
+        case '=': return equal;
+        case '!=': return !equal;
+        case '<': return lp.re < rp.re;
+        case '>': return lp.re > rp.re;
+        case '<=': return lp.re <= rp.re;
+        case '>=': return lp.re >= rp.re;
       }
       return false;
     }
