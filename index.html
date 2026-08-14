@@ -3509,6 +3509,16 @@ function plainExpr(expr) {
   // instead of falling through to nerdamer's unhelpful unevaluated "factorial(-1)".
   if (mErr && /non-negative/i.test(mErr.message))
     return { text: 'That’s undefined — factorial only works on non-negative numbers.', cls: 'err' };
+  // Same idea for nCr/nPr given an out-of-domain argument (r > n, a negative
+  // count, or a non-integer): mathjs already refuses with a clear reason, but
+  // nerdamer's combinations()/permutations() don't recognize the call at all
+  // and just hand back the raw unevaluated form — "(5, 7, combinations)" —
+  // which the fallback below would otherwise show verbatim.
+  if (mErr && /in function (combinations|permutations)|must be less than or equal to/i.test(mErr.message)) {
+    if (/must be less than or equal to/i.test(mErr.message))
+      return { text: 'That’s undefined — the second number can’t be larger than the first.', cls: 'err' };
+    return { text: 'That’s undefined — both numbers need to be non-negative whole numbers.', cls: 'err' };
+  }
 
   try {
     const s = nerdamer(expr); const str = s.toString();
