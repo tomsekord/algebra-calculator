@@ -3460,10 +3460,34 @@ function plainExpr(expr) {
     if (a.text === b.text) return a;   // e.g. "5±0" — branches collapse to one value
     return { parts: [a.tex || a.text, b.tex || b.text], text: `${a.text}   or   ${b.text}`, cls: 'num' };
   }
+  // mod(x, 0): mathjs's own convention is mod(x,0) = x — a documented design
+  // choice on their side — but every OTHER divide-by-zero in this calculator
+  // says so plainly, and a bare mod(5,0) silently echoing back "5" reads as a
+  // genuine computed answer rather than the undefined remainder it actually
+  // is. Only matches a divisor with no nested parens of its own (mod(5,0),
+  // mod(x,2-2)); a divisor built from a call like mod(5,f(0)) falls through
+  // unguarded, same as any other edge case this heuristic doesn't reach.
+  const modZero = expr.match(/\bmod\(([^()]+),([^()]+)\)/);
+  if (modZero) {
+    try {
+      if (math.evaluate(modZero[2], numScope) === 0)
+        return { text: 'That’s undefined — you can’t take a remainder with a divisor of 0.', cls: 'err' };
+    } catch {}
+  }
   let mErr;
   try {
     const val = math.evaluate(preferRealOddRoot(expr), numScope);
     if (val !== undefined) {
+      // tan/sec/csc/cot near their own asymptotes: cos(π/2) (or sin, for
+      // cot/csc) is essentially never exactly 0 in floating point — it lands
+      // a hair off, like 6.12e-17 — so the ratio comes out as some enormous
+      // but perfectly finite float (16331239353195370, say) instead of the
+      // actual Infinity that would trip the "grows without bound" branch
+      // below. Exact mode then dutifully tried to express that float as a
+      // "nice" integer, producing pure noise. Nothing legitimate produces a
+      // bare tan/sec/csc/cot call this large — it IS the asymptote, numerically.
+      if (typeof val === 'number' && Math.abs(val) > 1e10 && /\b(tan|sec|csc|cot)\(/.test(expr))
+        return { text: 'That’s undefined — this is right at an asymptote, where the value blows up.', cls: null };
       if (typeof val === 'number' && isFinite(val)) {
         // In Exact mode, prefer a clean symbolic form (sqrt(3), e, ...) over
         // the decimal mathjs always computes first — but only bother when
