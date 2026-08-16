@@ -3474,6 +3474,19 @@ function plainExpr(expr) {
         return { text: 'That’s undefined — you can’t take a remainder with a divisor of 0.', cls: 'err' };
     } catch {}
   }
+  // log base 1: mathjs computes this as log(x)/log(1) = log(x)/0, which lands
+  // in the generic "!isFinite" branch below and (because the expression
+  // contains "log(") gets mislabeled "log of 0 has no value" — misleading,
+  // since nothing here took the log of 0; the argument can be anything, it's
+  // the BASE that's degenerate (1 to any power is always 1, never x).
+  const logBaseOne = expr.match(/\blog\(([^()]+),([^()]+)\)/);
+  if (logBaseOne) {
+    try {
+      const b = math.evaluate(logBaseOne[2], numScope);
+      if (typeof b === 'number' && Math.abs(b - 1) < 1e-12)
+        return { text: 'That’s undefined — log base 1 doesn’t work (1 to any power is always 1).', cls: 'err' };
+    } catch {}
+  }
   let mErr;
   try {
     const val = math.evaluate(preferRealOddRoot(expr), numScope);
