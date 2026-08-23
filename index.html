@@ -153,7 +153,14 @@
     .lresult.num { color:var(--blue); }
     .lresult.sym { color:var(--gold); }
     .lresult.ok  { color:var(--green); }
-    .lresult.err { color:var(--red); font-size:.78rem; }
+    /* Unlike .num/.sym (unbreakable KaTeX spans — see the comment on .lresult
+       above for why THEY must keep the full 100%), error text is plain and
+       word-break:break-word already reflows it just fine narrower. A long
+       error wrapping onto its own flex row with nothing capping its width
+       claims the ENTIRE row, leaving no room for .ldel to sit beside it —
+       .ldel then wraps AGAIN onto a third row, floating by itself below the
+       error box. Reserving space here keeps the × on the error's own row. */
+    .lresult.err { color:var(--red); font-size:.78rem; max-width:calc(100% - 36px); }
     .lresult .katex { font-size:1.05rem; }
 
     .ldel {
@@ -775,7 +782,6 @@ let numScope = {}, varNames = new Set();
 let knownVars = new Map();   // name -> {text} for the sidebar; separate from numScope since
                               // ambiguous (multi-valued) variables can't be substituted elsewhere
                               // but should still show up so the user can see "we found these values"
-let primaryDefLine = new Map();   // varName -> the one line that "owns" plain assignment to it
 let knownFunctionNames = new Set();   // single-letter names with a f(x)=... definition on some line —
                                        // lets latexToExpr tell "f(x)" (call) apart from "f*(x)" (multiply)
 let knownSequenceNames = new Set();   // subset of the above defined via SUBSCRIPT notation (a_n = ...) —
@@ -1024,9 +1030,10 @@ document.addEventListener('DOMContentLoaded', () => {
   for (let i = 0; i < 3; i++) addLogicLine('', false);
 });
 
-/* Drag a line's handle (⠿) to reorder — order matters for which line "owns"
-   a variable/function definition (see primaryDefLine), so reordering can
-   change results, not just cosmetics. Uses native HTML5 drag-and-drop,
+/* Drag a line's handle (⠿) to reorder — order matters for which line's
+   assignment to a name wins (later lines overwrite earlier ones) and for
+   which line "owns" a function definition (see primaryFuncDefLine), so
+   reordering can change results, not just cosmetics. Uses native HTML5 drag-and-drop,
    delegated on the container since lines are created/removed dynamically. */
 function setupDragReorder() {
   const container = document.getElementById('lines');
@@ -1788,7 +1795,7 @@ function seqDefHead(line) {
 
 function evaluateAll() {
   try { nerdamer.clearVars(); } catch {}
-  numScope = {}; varNames = new Set(); knownVars = new Map(); primaryDefLine = new Map(); primaryFuncDefLine = new Map();
+  numScope = {}; varNames = new Set(); knownVars = new Map(); primaryFuncDefLine = new Map();
   solvedByLine = new Map();   // rebuilt per evaluation, but kept ACROSS the passes below
 
   const linesArr = allLines();
@@ -1819,19 +1826,6 @@ function evaluateAll() {
   // self-referential and hang the whole page trying to resolve it — catch that
   // before it ever reaches nerdamer.setVar.
   const circular = detectCircularAssignments(linesArr);
-
-  // First simple "name = ..." line for each name "owns" plain assignment to it;
-  // any later line reusing that name is treated as an equation using the known
-  // value instead of a silent redefinition (see evalExpr).
-  linesArr.forEach(line => {
-    const mq = line._mq;
-    const latex = mq ? mq.latex() : '';
-    if (!latex || !latex.trim()) return;
-    let expr;
-    try { expr = latexToExpr(latex, complexMode); } catch { return; }
-    const m = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
-    if (m && !/[+\-*/^]/.test(m[1]) && !primaryDefLine.has(m[1])) primaryDefLine.set(m[1], line);
-  });
 
   // Run multiple passes so forward references resolve — e.g. line 3 using a
   // variable defined on line 5 — like a spreadsheet, not strictly top-to-bottom.
@@ -2303,14 +2297,11 @@ function evalExpr(expr, line) {
   // Assignment:  <name> = <value>
   const asgn = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
   if (asgn && !/[+\-*/^]/.test(asgn[1])) {
-    // If some OTHER, earlier line already owns this name (e.g. "x=5" on line 1),
-    // a later "x=y+1" isn't a redefinition — it's an equation relating the known
-    // x to y, solvable for y. But the owning line itself must keep reassigning
-    // normally on every pass, or multi-pass evaluation would see its own
-    // previously-set value and mistake itself for a "later reuse".
-    const owner = primaryDefLine.get(asgn[1]);
-    if (owner && owner !== line && Object.prototype.hasOwnProperty.call(numScope, asgn[1]))
-      return solveEquation(`(${numScope[asgn[1]]})=(${asgn[2]})`);
+    // A later "x = 3" after an earlier "x = 7" reassigns x to 3, the same way
+    // typing over a cell in a spreadsheet replaces its old value — it does
+    // NOT get treated as an equation checking whether 7 equals 3. (Multi-pass
+    // evaluation runs every line top-to-bottom each pass, so whichever
+    // assignment is LAST in line order simply wins, consistently, every pass.)
     // "r = r+1" isn't a definition of r in terms of itself — there's no such
     // value — it's an equation (no solution, unless it cancels out to always
     // true). Route it to the equation solver instead of assign(), which would
@@ -2602,9 +2593,9 @@ function formatSolutions(parts, v) {
 /* Plain "name = <expr>" lines whose right-hand side works out to a number on
    its own, as name -> that right-hand side TEXT (not the number — keeping the
    expression means "k = 1/3" stays exact when it is substituted, instead of
-   becoming 0.3333333333). First definition of a name wins, matching the same
-   "first line owns it" rule evalExpr/primaryDefLine use, so a later "x = 7"
-   after "x = 5" stays an equation rather than silently redefining x.
+   becoming 0.3333333333). Last definition of a name wins, matching evalExpr's
+   own "later assignment overwrites" rule — a later "x = 7" after "x = 5"
+   really does replace x, the same value evalExpr itself would show.
    Chained definitions (a = 2, b = a+1) resolve over a few rounds. */
 function collectPlainAssignments(linesArr) {
   const raw = new Map();
@@ -2617,9 +2608,9 @@ function collectPlainAssignments(linesArr) {
     let expr;
     try { expr = latexToExpr(latex, complexMode); } catch { continue; }
     const m = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
-    if (!m || /[+\-*/^]/.test(m[1]) || raw.has(m[1])) continue;
+    if (!m || /[+\-*/^]/.test(m[1])) continue;
     if (findUnknowns(m[2]).includes(m[1])) continue;      // self-referential (r = r+1) — an equation, not a value
-    raw.set(m[1], m[2]);
+    raw.set(m[1], m[2]);   // later lines overwrite earlier ones — matches evalExpr's "last assignment wins"
   }
   // Resolve references between them, then keep only the ones that really do
   // land on a plain number once everything is filled in.
@@ -3380,6 +3371,42 @@ function tryExactForm(expr, val) {
   } catch { return null; }
 }
 
+/* A bare two-argument log(x, base) call (this app's internal form for any
+   \log the user types — base defaults to 10, see the 'log' case in
+   latexToExpr) whose value ISN'T a clean number: nerdamer doesn't have a
+   symbolic representation for "log base b", so asking it to simplify one
+   just evaluates it as a float and rationalizes that float into an ugly,
+   meaningless fraction (log(7) → 431/510, which LOOKS exact but isn't any
+   more meaningful than 0.8451). Keeping it as "log(7)" — the same undecorated
+   form the log keyboard button itself displays for base 10 — is honest about
+   there being no simpler exact form, matching how sqrt(2) or pi stay
+   symbolic rather than being forced into some equally-arbitrary fraction. */
+function trySymbolicLog(expr, val) {
+  // NOT isCleanNumber(val) here — that goes through fmtNum's own
+  // snap-to-nearby-fraction search (denominators up to 1000, 1e-9 tolerance),
+  // which is exactly the generous, log-appropriate-for-genuinely-rational-
+  // decimals behavior that produces the ugly "431/510" this function exists
+  // to avoid — every irrational value has SOME close rational approximant in
+  // that wide a net, so it would always call log(7) "already clean" and skip
+  // straight past this guard. A log is only actually clean when its argument
+  // is an exact power of its base, i.e. the log itself lands on a whole number.
+  if (Math.abs(val - Math.round(val)) < 1e-9) return null;
+  const m = expr.trim().match(/^log\(([^,]+),([^,]+)\)$/);
+  if (!m) return null;
+  let argVal, baseVal;
+  try {
+    argVal = math.evaluate(m[1], numScope);
+    baseVal = math.evaluate(m[2], numScope);
+  } catch { return null; }
+  if (typeof argVal !== 'number' || !isFinite(argVal) || argVal <= 0) return null;
+  if (typeof baseVal !== 'number' || !isFinite(baseVal)) return null;
+  const argDisp = fmtNum(argVal);
+  if (Math.abs(baseVal - 10) < 1e-12) return { tex: `\\log\\left(${argDisp}\\right)`, text: `log(${argDisp})`, cls: 'sym' };
+  if (Math.abs(baseVal - Math.E) < 1e-9) return { tex: `\\ln\\left(${argDisp}\\right)`, text: `ln(${argDisp})`, cls: 'sym' };
+  const baseDisp = fmtNum(baseVal);
+  return { tex: `\\log_{${baseDisp}}\\left(${argDisp}\\right)`, text: `log_${baseDisp}(${argDisp})`, cls: 'sym' };
+}
+
 /* Decimal-mode counterpart for expressions that still have a free variable
    (e.g. "e*sqrt(3)*x"): nerdamer's .evaluate() does turn the numeric part
    into a number while leaving the variable alone, but — same rationalizing
@@ -3451,6 +3478,45 @@ function pmBranches(expr) {
   return [expr.replace(/±/g, '+'), expr.replace(/±/g, '-')];
 }
 
+/* Standard "trig of an inverse trig" identities — sin(acos(x)), cos(asin(x)),
+   etc. nerdamer's simplify() doesn't know these (it has no notion that
+   sin²+cos²=1 applies across a composition like this), so left alone it just
+   echoes the composition back unevaluated. Only matches when the WHOLE
+   expression is one such composition (not e.g. "1+sin(acos(x))") — a scan for
+   balanced parens rather than a regex, since the inner argument can itself
+   contain parens (sin(acos(x+1))). */
+function trySimplifyInverseTrigComposition(expr) {
+  const IDENT = {
+    'sin_acos': arg => `sqrt(1-(${arg})^2)`,
+    'cos_asin': arg => `sqrt(1-(${arg})^2)`,
+    'sin_atan': arg => `(${arg})/sqrt(1+(${arg})^2)`,
+    'cos_atan': arg => `1/sqrt(1+(${arg})^2)`,
+    'tan_asin': arg => `(${arg})/sqrt(1-(${arg})^2)`,
+    'tan_acos': arg => `sqrt(1-(${arg})^2)/(${arg})`,
+  };
+  const balancedArg = (s, name) => {   // s must be "name(...)" with nothing after the matching close-paren
+    if (!s.startsWith(name + '(')) return null;
+    let depth = 0, p = name.length;
+    for (; p < s.length; p++) {
+      if (s[p] === '(') depth++;
+      else if (s[p] === ')') { depth--; if (depth === 0) break; }
+    }
+    if (p !== s.length - 1) return null;
+    return s.slice(name.length + 1, p);
+  };
+  for (const outer of ['sin', 'cos', 'tan']) {
+    const inner = balancedArg(expr, outer);
+    if (inner == null) continue;
+    for (const innerFn of ['asin', 'acos', 'atan']) {
+      const arg = balancedArg(inner, innerFn);
+      if (arg == null) continue;
+      const build = IDENT[outer + '_' + innerFn];
+      if (build) return build(arg);
+    }
+  }
+  return null;
+}
+
 function plainExpr(expr) {
   const pm = pmBranches(expr);
   if (pm) {
@@ -3515,6 +3581,15 @@ function plainExpr(expr) {
           if (rational) return rational;
           const trigExact = tryTrigInverseExact(expr, val);
           if (trigExact) return trigExact;
+          const logSym = trySymbolicLog(expr, val);
+          if (logSym) return logSym;
+          // phi on its own: unlike e or pi (which have no simpler closed
+          // form — the symbol IS the simplest representation), phi is
+          // nothing but shorthand for (1+sqrt(5))/2, and nerdamer treats it
+          // as an opaque unevaluated symbol rather than expanding it — so
+          // left to the normal pipeline it just echoes back "phi" instead of
+          // the radical form a calculator should actually show.
+          if (expr.trim() === 'phi') return { tex: '\\frac{1+\\sqrt{5}}{2}', text: '(1+√5)/2', cls: 'sym', raw: '(1+sqrt(5))/2' };
           const exact = tryExactForm(expr, val);
           if (exact) return exact;
         }
@@ -3558,7 +3633,8 @@ function plainExpr(expr) {
   }
 
   try {
-    const s = nerdamer(expr); const str = s.toString();
+    const trigComp = trySimplifyInverseTrigComposition(expr.trim());
+    const s = nerdamer(trigComp || expr); const str = s.toString();
     const dstr = disp(str);
     // A lone variable typed directly (e.g. `i` or `x` on its own) has nothing to
     // compute → show nothing. But if a more complex expression SIMPLIFIED down to
@@ -3573,7 +3649,7 @@ function plainExpr(expr) {
       // never reached the plain-number branch above) should still turn its
       // numeric part into a decimal — e.g. "e*sqrt(3)*x" → "4.708202236x",
       // not stay as "e*sqrt(3)*x" just because x has no value.
-      if (decimalMode) { const dec = tryDecimalCoeffForm(expr); if (dec) return dec; }
+      if (decimalMode) { const dec = tryDecimalCoeffForm(trigComp || expr); if (dec) return dec; }
       return { tex: safeTeX(s), text: dstr, cls: 'sym' };
     }
   } catch {}
@@ -3773,7 +3849,14 @@ function evalLimit(latex) {
   if (!body) return { text: 'Type an expression after the limit to evaluate it.', cls: 'err' };
 
   let point;
-  if (targetLatex === '\\infty') {
+  // "\infty" is what \pm-style autoCommands would produce, but there's no
+  // autoCommand for infinity here — the only way to type it is the WORD
+  // "inf", which MathQuill's autoOperatorNames converts to "\inf" (its own
+  // built-in operator name, one f — see makeMQConfig above). Missing that
+  // spelling here sent it down the numeric branch below, where it correctly
+  // evaluated to Infinity... only for the plain isFinite() guard there to
+  // reject that legitimate result as if parsing had failed.
+  if (targetLatex === '\\infty' || targetLatex === '\\inf') {
     point = neg ? -Infinity : Infinity;
   } else {
     try { point = Number(math.evaluate(stripOuter(latexToExpr(targetLatex, complexMode)), numScope)); }
@@ -4247,6 +4330,19 @@ function latexToExpr(tex, complex) {
         while (s[i] === ' ') i++;
         let base = '10';
         if (s[i] === '_') { i++; base = stripOuter(parseArg()); }
+        else {
+          // Typing the WORD "log10" or "log2" (rather than using the log
+          // keyboard buttons, which insert plain "log(") is a natural thing
+          // to try — but MathQuill's autoOperatorNames can't contain digits
+          // at all, so only the "log" part converts to \log; the "10"/"2"
+          // that follows lands as bare literal digits, which \log's own
+          // argument-grabber then swallows as ITS argument (so "log10(100)"
+          // parsed as log(1)*0*(100) = 0, not log₁₀(100) = 2). Treat digits
+          // immediately followed by an open paren — no space — as the base
+          // instead of as part of the argument.
+          const baseMatch = s.slice(i).match(/^(\d+)\(/);
+          if (baseMatch) { base = baseMatch[1]; i += baseMatch[1].length; }
+        }
         return 'log(' + stripOuter(parseArg()) + ',' + base + ')';
       }
       case 'exp': return 'exp' + parseArg();
