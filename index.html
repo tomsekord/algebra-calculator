@@ -3487,6 +3487,9 @@ function pmBranches(expr) {
    contain parens (sin(acos(x+1))). */
 function trySimplifyInverseTrigComposition(expr) {
   const IDENT = {
+    'sin_asin': arg => `(${arg})`,
+    'cos_acos': arg => `(${arg})`,
+    'tan_atan': arg => `(${arg})`,
     'sin_acos': arg => `sqrt(1-(${arg})^2)`,
     'cos_asin': arg => `sqrt(1-(${arg})^2)`,
     'sin_atan': arg => `(${arg})/sqrt(1+(${arg})^2)`,
@@ -3590,7 +3593,12 @@ function plainExpr(expr) {
           // left to the normal pipeline it just echoes back "phi" instead of
           // the radical form a calculator should actually show.
           if (expr.trim() === 'phi') return { tex: '\\frac{1+\\sqrt{5}}{2}', text: '(1+√5)/2', cls: 'sym', raw: '(1+sqrt(5))/2' };
-          const exact = tryExactForm(expr, val);
+          // Same trig-of-inverse-trig identity as the free-variable and
+          // complex-number paths (see trySimplifyInverseTrigComposition) — a
+          // real, in-domain numeric argument like sin(arccos(0.5)) lands
+          // HERE (a plain finite real number), not in either of those.
+          const trigComp = trySimplifyInverseTrigComposition(expr.trim());
+          const exact = tryExactForm(trigComp || expr, val);
           if (exact) return exact;
         }
         return { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
@@ -3601,7 +3609,12 @@ function plainExpr(expr) {
         if (!decimalMode) {
           const rational = tryExactRational(expr, val);
           if (rational) return rational;
-          const exact = tryExactForm(expr, val);
+          // Same trig-of-inverse-trig identity as the free-variable path below
+          // (see trySimplifyInverseTrigComposition) — an out-of-domain argument
+          // like sin(acos(2)) lands here as a genuine complex number instead of
+          // throwing, so it never reaches that other path at all.
+          const trigComp = trySimplifyInverseTrigComposition(expr.trim());
+          const exact = tryExactForm(trigComp || expr, val);
           if (exact) return exact;
         }
         return { tex: complexTeX(val), text: fmtMath(val), cls: 'num' };
