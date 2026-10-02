@@ -4324,6 +4324,45 @@ function latexToExpr(tex, complex) {
     return '';
   }
 
+  /* Argument of a trig/log-style function. With explicit parens (sin(x)) it's
+     exactly what parseArg gives — a following ^ then applies to the whole call,
+     sin(x)^2. WITHOUT parens it's the written-out term, the way people read
+     it: "cosh x^2" is cosh(x²), "sin 2x" is sin(2x) — not cosh(x)² / sin(2)·x.
+     A bare term is a run of numbers, letters and constants (each with an
+     optional power) that stops at +, -, =, a comma, a closing bracket, or
+     another function / operator command. */
+  const FN_STOP = /^(sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|arcsin|arccos|arctan|ln|log|exp|abs|sign|floor|ceil|round|gcd|lcm|mod|det|factorial|factor|expand|simplify|operatorname|cdot|times|div|pm|mp|lim|sum|prod|int|to|nCr|nPr|taylor)$/;
+  function parseFnArg() {
+    while (s[i] === ' ') i++;
+    if (s[i] === '(' || s[i] === '{') return parseArg();
+    let term = '', n = 0;
+    while (i < s.length) {
+      const d = s[i];
+      if (d === ' ') { i++; continue; }
+      let atom;
+      if (/[0-9.]/.test(d)) { atom = ''; while (i < s.length && /[0-9.]/.test(s[i])) atom += s[i++]; }
+      else if (/[a-zA-Z]/.test(d)) atom = s[i++];
+      else if (d === '\\') {
+        const nm = (s.slice(i + 1).match(/^[a-zA-Z]+/) || [''])[0];
+        if (!nm || FN_STOP.test(nm)) break;
+        atom = '(' + parseCommand() + ')';
+      } else break;
+      if (s[i] === '^') { i++; atom += '^' + parseArg(); }
+      term += (n++ ? '*' : '') + atom;
+    }
+    return n ? '(' + term + ')' : parseArg();
+  }
+  // sin²x / sin^2(x) / sin^{-1}x — an exponent written between the function
+  // name and its argument. -1 on a trig function means the inverse function.
+  const INVERSE = { sin: 'asin', cos: 'acos', tan: 'atan', sinh: 'asinh', cosh: 'acosh', tanh: 'atanh' };
+  function fnWithPower(name, mathName) {
+    if (s[i] !== '^') return mathName + parseFnArg();
+    i++;
+    const e = parseArg();
+    if (e === '(-1)' && INVERSE[name]) return INVERSE[name] + parseFnArg();
+    return '(' + mathName + parseFnArg() + ')^' + e;
+  }
+
   function parseCommand() {
     i++;
     if (!/[a-zA-Z]/.test(s[i] || '')) return s[i++] || '';
@@ -4338,7 +4377,7 @@ function latexToExpr(tex, complex) {
         return 'sqrt' + parseArg();
       }
       case 'abs': return 'abs' + parseArg();
-      case 'ln': return 'log' + parseArg();
+      case 'ln': return 'log' + parseFnArg();
       case 'log': {
         while (s[i] === ' ') i++;
         let base = '10';
@@ -4356,7 +4395,7 @@ function latexToExpr(tex, complex) {
           const baseMatch = s.slice(i).match(/^(\d+)\(/);
           if (baseMatch) { base = baseMatch[1]; i += baseMatch[1].length; }
         }
-        return 'log(' + stripOuter(parseArg()) + ',' + base + ')';
+        return 'log(' + stripOuter(parseFnArg()) + ',' + base + ')';
       }
       case 'exp': return 'exp' + parseArg();
       case 'pi': return 'pi';
@@ -4373,6 +4412,7 @@ function latexToExpr(tex, complex) {
         return name;
       case 'sin': case 'cos': case 'tan': case 'sec': case 'csc': case 'cot':
       case 'sinh': case 'cosh': case 'tanh':
+        return fnWithPower(name, name);
       case 'sign': case 'floor': case 'ceil': case 'round':
       case 'gcd': case 'lcm': case 'mod': case 'det': case 'factorial':
       case 'factor': case 'expand': case 'simplify':
@@ -4380,9 +4420,9 @@ function latexToExpr(tex, complex) {
       // math.js/nerdamer only know the "a-" spelling (asin, not arcsin) —
       // without this remap, "\arcsin(1)" reaches math.evaluate as a
       // function name it's never heard of and just echoes back unevaluated.
-      case 'arcsin': return 'asin' + parseArg();
-      case 'arccos': return 'acos' + parseArg();
-      case 'arctan': return 'atan' + parseArg();
+      case 'arcsin': return 'asin' + parseFnArg();
+      case 'arccos': return 'acos' + parseFnArg();
+      case 'arctan': return 'atan' + parseFnArg();
       case 'nCr': return 'combinations' + parseArg();
       case 'nPr': return 'permutations' + parseArg();
       case 'taylor': return 'taylor' + parseArg();
@@ -4589,6 +4629,9 @@ function disp(str) {
   // one-argument shape ("\mathrm{log}\left(" with no "_{base}" in between) — a
   // log(x,10) call renders with a "_{10}" in between and keeps showing as log.
   s = s.split('\\mathrm{log}\\left(').join('\\ln\\left(');
+  // Same idea for the inverse trig functions: the internal asin/acos/atan
+  // spellings (what mathjs/nerdamer know) read as arcsin/arccos/arctan to a user.
+  for (const f of ['sin', 'cos', 'tan']) s = s.split(`\\mathrm{a${f}}`).join(`\\arc${f}`);
   // Drop the explicit \cdot nerdamer's toTeX() always inserts between multiplied
   // factors — juxtaposition (2x, ex, x\sqrt2) is normal math notation; only keep it
   // between two adjacent digit runs, where dropping it would visually merge two
