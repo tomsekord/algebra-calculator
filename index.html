@@ -2661,7 +2661,15 @@ function solveSystems(linesArr) {
     const eqMatch = expr.match(/(?<![=<>])=(?!=)/);
     if (!eqMatch) return null;
     const asgn = expr.match(/^([a-zA-Z]\w*)\s*=(?!=)\s*(.+)$/);
-    if (asgn && !/[+\-*/^]/.test(asgn[1])) return null;   // plain assignment, not a system equation
+    // "k = 3" / "A = πr²" with everything on the right already known is a plain
+    // assignment. But "y = 2x+1" next to "x + y = 7" is the classic textbook
+    // system — its right side holds ANOTHER unknown, so it is an equation like
+    // any other and must take part (it only changes anything when equations and
+    // unknowns balance; "y = 2x+1, z = y+1" alone stays two plain definitions).
+    if (asgn && !/[+\-*/^]/.test(asgn[1])) {
+      const rhsUnknowns = findUnknowns(substituteGivens(asgn[2], givens));
+      if (!rhsUnknowns.length || rhsUnknowns.includes(asgn[1])) return null;
+    }
     // A variable given its own value on another line ("k = 3") is a KNOWN, not
     // an unknown of this system — substitute it before counting. Without this
     // "k=3, x+y=k, x−y=1" looked like 2 equations in 3 unknowns, so the group
@@ -2776,7 +2784,23 @@ function trySolveSystem(eqs, vars) {
     if (Array.isArray(r) && r.length === vars.length && r.every(p => Array.isArray(p) && p.length === 2)) {
       const sol = {};
       for (const [v, val] of r) sol[v] = String(val);
-      if (vars.every(v => sol[v] !== undefined)) return [sol];
+      // nerdamer.solveEquations only truly handles LINEAR systems — handed a
+      // nonlinear one (y = x², x + y = 6) it still returns an "answer"
+      // (x=3, y=3) that satisfies nothing. Plug it back in before trusting it;
+      // a bad candidate falls through to the nonlinear solver below.
+      if (vars.every(v => sol[v] !== undefined)) {
+        let good = true;
+        try {
+          const scope = { ...numScope };
+          let mag = 1;
+          for (const v of vars) { const n = math.evaluate(sol[v], numScope); scope[v] = n; mag = Math.max(mag, Number(math.abs(n))); }
+          for (const e of eqs) {
+            const resid = Number(math.abs(math.evaluate(e, scope)));
+            if (!(resid < 1e-6 * mag * mag)) { good = false; break; }
+          }
+        } catch { good = true; }   // can't verify (unevaluable form): keep the old behaviour
+        if (good) return [sol];
+      }
     }
   } catch {}
 
