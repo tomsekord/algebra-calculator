@@ -3507,6 +3507,14 @@ function trySimplifyInverseTrigComposition(expr) {
     if (p !== s.length - 1) return null;
     return s.slice(name.length + 1, p);
   };
+  // e^(ln A) = A (the mirror of ln(e^A) = A, which nerdamer already does)
+  const eLog = expr.match(/^e\^\(log\((.+)\)\)$/);
+  if (eLog && balancedArg('log(' + eLog[1] + ')', 'log') === eLog[1]) return `(${eLog[1]})`;
+  // sin²A + cos²A = 1, either order, same argument
+  // (written as (sin(A))^(2) when typed sin²A, or sin(A)^(2) with parens)
+  const sq = '\\(?(sin|cos)\\(((?:[^()]|\\([^()]*\\))+)\\)\\)?\\^\\(2\\)';
+  const pyth = expr.match(new RegExp(`^${sq}\\+${sq}$`));
+  if (pyth && pyth[1] !== pyth[3] && pyth[2] === pyth[4]) return '1';
   for (const outer of ['sin', 'cos', 'tan']) {
     const inner = balancedArg(expr, outer);
     if (inner == null) continue;
@@ -3987,11 +3995,17 @@ function simpson(f, a, b, n = 1000) {
 ============================================================ */
 /* Real roots of f(x)=0, nearest-to-zero first (Newton's method from many starting points) */
 function findRealRoots(f) {
-  const starts = [-1e3,-200,-50,-20,-10,-5,-3,-2,-1,-.5,0,.5,1,2,3,5,10,20,50,200,1e3];
+  // The small-magnitude starts matter for reciprocal-type equations: Newton on
+  // 1/x = 4 only converges from 0 < x0 < 0.5, and every start of 0.5 or more
+  // overshoots straight past the pole at 0 (0.5 lands exactly ON it).
+  const starts = [-1e3,-200,-50,-20,-10,-5,-3,-2,-1,-.5,-.2,-.1,-.02,-.005,0,.005,.02,.1,.2,.5,1,2,3,5,10,20,50,200,1e3];
   const found = [];
   for (const x0 of starts) {
     const s = newton(f, x0);
-    if (s !== null) { const r = Math.round(s*1e9)/1e9; if (!found.some(q => Math.abs(q-r)<1e-6)) found.push(r); }
+    // Rounded only to 1e-12: at 1e-9 the rounding alone moves a root on a steep
+    // part of the curve far enough (ln x = x−2 at x≈0.159, slope ≈5) that the
+    // caller's relative 1e-9 residual test then rejects a perfectly good root.
+    if (s !== null) { const r = Math.round(s*1e12)/1e12; if (!found.some(q => Math.abs(q-r)<1e-6)) found.push(r); }
   }
   found.sort((a, b) => Math.abs(a) - Math.abs(b));
   return found;
@@ -4278,7 +4292,20 @@ function newton(f, x0, it = 80) {
   let x = x0;
   for (let i = 0; i < it; i++) {
     const fx = f(x); if (!isFinite(fx)) return null;
-    if (Math.abs(fx) < 1e-12) return x;
+    if (Math.abs(fx) < 1e-12) {
+      // |f| < 1e-12 is an ABSOLUTE test, so for a steep-then-flat function it
+      // can pass while x is still visibly off (1/x = 0.001 stopped at
+      // 999.9999992). A few more steps, kept only while they don't make the
+      // residual worse, tighten x without risking a good answer.
+      for (let k = 0; k < 6; k++) {
+        const h2 = Math.max(1e-7, Math.abs(x)*1e-6), d2 = (f(x+h2)-f(x))/h2;
+        if (!isFinite(d2) || Math.abs(d2) < 1e-15) break;
+        const x2 = x - f(x)/d2;
+        if (!isFinite(x2) || !(Math.abs(f(x2)) <= Math.abs(f(x)))) break;
+        x = x2;
+      }
+      return x;
+    }
     const h = Math.max(1e-7, Math.abs(x)*1e-6), d = (f(x+h)-fx)/h;
     if (!isFinite(d) || Math.abs(d) < 1e-15) { x += (Math.random()-.5)*.5; continue; }
     x -= fx/d; if (!isFinite(x)) return null;
