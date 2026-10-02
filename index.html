@@ -3781,16 +3781,32 @@ function evalIntegral(latex) {
   // MathQuill re-serializes single-character sub/superscripts without braces
   // (e.g. "_0^1" instead of "_{0}^{1}") once you re-read .latex() after any
   // edit — so bounds must be matched as EITHER "{...}" OR a single bare token.
-  const m = latex.match(/\\int(?:_(\{[^}]*\}|[^\s{}]))?(?:\^(\{[^}]*\}|[^\s{}]))?/);
-  const unwrap = s => s == null ? null : (s[0] === '{' ? s.slice(1, -1) : s);
+  // A braced bound is read with brace DEPTH tracking — a bound like
+  // \frac{\pi}{2} has braces of its own, and stopping at the first "}" cut it
+  // off (∫ from 0 to π/2 came back "doesn't look like valid math").
+  const im = latex.match(/\\int/);
+  let pos = im.index + 4;
+  const grabBound = () => {
+    if (latex[pos] === '{') {
+      let d = 0, p = pos;
+      for (; p < latex.length; p++) { if (latex[p] === '{') d++; else if (latex[p] === '}' && --d === 0) break; }
+      const t = latex.slice(pos + 1, p); pos = p + 1; return t;
+    }
+    const cmd = latex.slice(pos).match(/^\\[a-zA-Z]+/);
+    if (cmd) { pos += cmd[0].length; return cmd[0]; }
+    if (pos >= latex.length || /[\s{}]/.test(latex[pos])) return null;
+    return latex[pos++];
+  };
+  let rawLower = null, rawUpper = null;
+  if (latex[pos] === '_') { pos++; rawLower = grabBound(); }
+  if (latex[pos] === '^') { pos++; rawUpper = grabBound(); }
   // \int also always carries hidden limit slots that render invisible when
   // untouched but can serialize as whitespace ("_{ }^{ }") rather than being
   // omitted — treat blank/whitespace-only bounds as "no bounds given"
   // (indefinite integral), not as an actual 0-to-0 definite integral.
-  const rawLower = unwrap(m[1]), rawUpper = unwrap(m[2]);
   const lowerL = rawLower && rawLower.trim() ? rawLower : null;
   const upperL = rawUpper && rawUpper.trim() ? rawUpper : null;
-  let rest = latex.slice(m.index + m[0].length);
+  let rest = latex.slice(pos);
   // trailing differential: d<var>
   const dm = rest.match(/(.*)d\s*([a-zA-Z])\s*$/s);
   let v = 'x', body = rest;
@@ -3801,7 +3817,52 @@ function evalIntegral(latex) {
   if (lowerL != null && upperL != null) {           // definite → numeric
     const lo = math.evaluate(stripOuter(latexToExpr(lowerL, complexMode)), numScope);
     const hi = math.evaluate(stripOuter(latexToExpr(upperL, complexMode)), numScope);
-    const val = simpson(x => math.evaluate(operand, { ...numScope, [v]: x }), lo, hi);
+    const integrand = x => math.evaluate(operand, { ...numScope, [v]: x });
+    const val = simpson(integrand, lo, hi);
+    // An integrand that blows up AT an endpoint (1/√(1−x²) at x=1) makes
+    // Simpson return Infinity even when the integral converges (here to π/2).
+    // Probe just inside the interval so the symbolic result below still has a
+    // number to be checked against (looser: the cut-off tail isn't included).
+    let ref = val, refTol = 1e-4;
+    if (!(typeof val === 'number' && isFinite(val)) && lo !== hi) {
+      try { const dl = (hi - lo) * 1e-7; ref = simpson(integrand, lo + dl, hi - dl); refTol = 1e-3; } catch {}
+    }
+    // Exact mode: ∫₀¹ eˣ dx is e−1, not 1.718281828. Take the antiderivative
+    // symbolically, evaluate it at the bounds, and use that only if it agrees
+    // with the numeric (Simpson) value — nerdamer's integrate can return a
+    // wrong or partial result, so the numeric answer stays the safety net.
+    if (typeof ref === 'number' && isFinite(ref) && !isCleanNumber(ref)) {
+      try {
+        freeVar(v);
+        const F = nerdamer.integrate(operand, v).toString();
+        nerdExact();
+        const at = b => F.replace(new RegExp(`\\b${v}\\b`, 'g'), `(${b})`);
+        // the bounds as WRITTEN (pi, e, 1/2 ...), not their float values
+        const hiS = stripOuter(latexToExpr(upperL, complexMode)), loS = stripOuter(latexToExpr(lowerL, complexMode));
+        // arctan(1) → pi/4 etc., the same special-angle table equations use
+        const exactExpr = `(${at(hiS)})-(${at(loS)})`.replace(/\b(asin|acos|atan)\(((?:[^()]|\([^()]*\))*)\)/g, (mm, fn, arg) => {
+          try {
+            const c = math.evaluate(arg, numScope);
+            const ex = typeof c === 'number' && exactTrigInverse(fn === 'asin' ? 'sin' : fn === 'acos' ? 'cos' : 'tan', c);
+            return ex ? `(${ex})` : mm;
+          } catch { return mm; }
+        });
+        const chk = math.evaluate(disp(exactExpr), numScope);
+        // Simpson is least accurate exactly where the integrand has a sharp
+        // endpoint (√x at 0 is off by ~3e-6), so the agreement check is loose;
+        // a wrong antiderivative misses by far more than this.
+        if (typeof chk === 'number' && isFinite(chk) && Math.abs(chk - ref) < refTol * Math.max(1, Math.abs(ref))) {
+          // the symbolic value is also the MORE accurate number — use it in Decimal mode
+          if (decimalMode) return { tex: fmtNumTeX(chk), text: fmtNum(chk), cls: 'num' };
+          const r = plainExpr(exactExpr);
+          // erf(...) is a correct but unhelpful answer for most users — fall through to the number
+          if (r && r.text != null && r.cls !== 'err' && !/erf/.test(r.text)) return r;
+          return { tex: fmtNumTeX(chk), text: fmtNum(chk), cls: 'num' };
+        }
+      } catch { nerdExact(); }
+    }
+    if (!(typeof val === 'number' && isFinite(val)))
+      return { text: 'The function blows up at one of those limits, so I can’t get a number for this integral (it may diverge, or be an improper integral I can’t evaluate).', cls: 'err' };
     return { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
   }
   freeVar(v);   // same reason as evalDerivative: ∫x²dx with x=2 known must not become ∫4dx
@@ -4642,6 +4703,44 @@ function foldPhiPowers(s) {
   return stripOuter(s);   // "phi^2" alone folds to "(phi+1)" — drop the now-redundant wrapping parens
 }
 
+/* nerdamer's TeX wraps a compound fraction part in its own \left( \right) even
+   though the fraction bar already groups it: 1/(x²+1) comes out as
+   \frac{1}{\left(x^{2}+1\right)}. Drops those redundant parens — only when the
+   \left( ... \right) pair spans the ENTIRE numerator or denominator. */
+function stripFracParens(tex) {
+  const L = '\\left(', R = '\\right)';
+  const strip = (str, openIdx) => {          // openIdx = index of a "{" that starts a frac part
+    let depth = 0, p = openIdx;
+    for (; p < str.length; p++) { if (str[p] === '{') depth++; else if (str[p] === '}') { depth--; if (!depth) break; } }
+    const inner = str.slice(openIdx + 1, p);
+    if (!inner.startsWith(L) || !inner.endsWith(R)) return null;
+    let d = 0;                                // the opening \left( must close at the very end
+    for (let k = 0; k < inner.length;) {
+      if (inner.startsWith(L, k)) { d++; k += L.length; }
+      else if (inner.startsWith(R, k)) { d--; k += R.length; if (d === 0 && k < inner.length) return null; }
+      else k++;
+    }
+    return { inner: inner.slice(L.length, inner.length - R.length), end: p };
+  };
+  let out = tex, from = 0;
+  for (;;) {
+    const at = out.indexOf('\\frac{', from);
+    if (at < 0) break;
+    const numOpen = at + 5;
+    const num = strip(out, numOpen);
+    if (num) out = out.slice(0, numOpen) + '{' + num.inner + out.slice(num.end);
+    // re-find the denominator's "{" after the (possibly shortened) numerator
+    let depth = 0, p = numOpen;
+    for (; p < out.length; p++) { if (out[p] === '{') depth++; else if (out[p] === '}') { depth--; if (!depth) break; } }
+    if (out[p + 1] === '{') {
+      const den = strip(out, p + 1);
+      if (den) out = out.slice(0, p + 1) + '{' + den.inner + out.slice(den.end);
+    }
+    from = at + 6;
+  }
+  return out;
+}
+
 /* Replace internal IVAR/unit aliases back to their real letters for display */
 function disp(str) {
   let s = String(str).replace(new RegExp(IVAR, 'g'), 'i');
@@ -4659,6 +4758,7 @@ function disp(str) {
   // Same idea for the inverse trig functions: the internal asin/acos/atan
   // spellings (what mathjs/nerdamer know) read as arcsin/arccos/arctan to a user.
   for (const f of ['sin', 'cos', 'tan']) s = s.split(`\\mathrm{a${f}}`).join(`\\arc${f}`);
+  s = stripFracParens(s);
   // Drop the explicit \cdot nerdamer's toTeX() always inserts between multiplied
   // factors — juxtaposition (2x, ex, x\sqrt2) is normal math notation; only keep it
   // between two adjacent digit runs, where dropping it would visually merge two
