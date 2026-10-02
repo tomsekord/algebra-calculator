@@ -3371,6 +3371,76 @@ function tryExactForm(expr, val) {
   } catch { return null; }
 }
 
+/* Exact integer/rational arithmetic on BigInt, for expressions whose
+   intermediate values overflow a double: 171!/170! is 171, but both factorials
+   are Infinity as floats so the quotient came out NaN ("dividing by zero").
+   Understands numbers, + - * / ^, parentheses, n!, factorial(), nCr/nPr
+   (combinations/permutations). Returns {n, d} (reduced BigInt fraction) or
+   null for anything else — it is a fallback, never a replacement. */
+function exactBigExpr(expr) {
+  if (!/^[\d\s+\-*/^().,!a-z]+$/.test(expr) || !/factorial|combinations|permutations|!/.test(expr)) return null;
+  const toks = expr.match(/\d+|factorial|combinations|permutations|[+\-*/^(),!]/g);
+  if (!toks || toks.join('').length !== expr.replace(/\s+/g, '').length) return null;
+  const gcd = (a, b) => { a = a < 0n ? -a : a; b = b < 0n ? -b : b; while (b) [a, b] = [b, a % b]; return a; };
+  const mk = (n, d = 1n) => { if (d < 0n) { n = -n; d = -d; } const g = gcd(n, d) || 1n; return { n: n / g, d: d / g }; };
+  const fact = k => { if (k.d !== 1n || k.n < 0n || k.n > 10000n) throw 0; let r = 1n; for (let i = 2n; i <= k.n; i++) r *= i; return mk(r); };
+  let i = 0;
+  const peek = () => toks[i];
+  const expect = t => { if (toks[i++] !== t) throw 0; };
+  function sum() { let a = prod(); while (peek() === '+' || peek() === '-') { const op = toks[i++], b = prod(); a = op === '+' ? mk(a.n * b.d + b.n * a.d, a.d * b.d) : mk(a.n * b.d - b.n * a.d, a.d * b.d); } return a; }
+  function prod() { let a = unary(); while (peek() === '*' || peek() === '/') { const op = toks[i++], b = unary(); if (op === '/' && b.n === 0n) throw 0; a = op === '*' ? mk(a.n * b.n, a.d * b.d) : mk(a.n * b.d, a.d * b.n); } return a; }
+  function unary() { if (peek() === '-') { i++; const a = unary(); return mk(-a.n, a.d); } if (peek() === '+') { i++; return unary(); } return pow(); }
+  function pow() { let a = post(); if (peek() === '^') { i++; const e = unary(); if (e.d !== 1n || e.n < 0n || e.n > 10000n) throw 0; a = mk(a.n ** e.n, a.d ** e.n); } return a; }
+  function post() { let a = atom(); while (peek() === '!') { i++; a = fact(a); } return a; }
+  function atom() {
+    const t = toks[i++];
+    if (t === undefined) throw 0;
+    if (/^\d+$/.test(t)) return mk(BigInt(t));
+    if (t === '(') { const v = sum(); expect(')'); return v; }
+    if (t === 'factorial') { expect('('); const v = sum(); expect(')'); return fact(v); }
+    if (t === 'combinations' || t === 'permutations') {
+      expect('('); const a = sum(); expect(','); const b = sum(); expect(')');
+      if (a.d !== 1n || b.d !== 1n || a.n < 0n || b.n < 0n || b.n > a.n || a.n > 10000n) throw 0;
+      let p = 1n; for (let k = 0n; k < b.n; k++) p *= (a.n - k);
+      if (t === 'permutations') return mk(p);
+      let f = 1n; for (let k = 2n; k <= b.n; k++) f *= k;
+      return mk(p / f);
+    }
+    throw 0;
+  }
+  try { const v = sum(); return i === toks.length ? v : null; } catch { return null; }
+}
+
+/* Pure radical arithmetic that nerdamer leaves uncombined: sqrt(2)*sqrt(3)
+   stays "√2·√3" and sqrt(6)/sqrt(2) becomes "√6/√2", where √6 and √3 are the
+   answers. Such a value is always (a/b)·√m, so its SQUARE is rational:
+   recover that rational, then pull the square factors out of the radicand.
+   Only for expressions made of numbers and sqrt() alone, and only when the
+   square is rational to 1e-12 with a small denominator — a looser net would
+   eventually "find" a fraction for any irrational. */
+function tryCombinedRadical(expr, val) {
+  if (typeof val !== 'number' || !isFinite(val) || val === 0) return null;
+  if ((expr.match(/sqrt\(/g) || []).length < 2) return null;     // one radical: nerdamer already does fine
+  if (!/^[\d\s+\-*/^().]+$/.test(expr.replace(/sqrt/g, ''))) return null;
+  const r = val * val;
+  let p = 0, q = 0;
+  for (let d = 1; d <= 200; d++) {
+    const n = Math.round(r * d);
+    if (n > 0 && Math.abs(n / d - r) < 1e-12 * Math.max(1, r)) { p = n; q = d; break; }
+  }
+  if (!q) return null;
+  const gcd = (a, b) => b ? gcd(b, a % b) : a;
+  const g0 = gcd(p, q); p /= g0; q /= g0;
+  const N = p * q;                                   // √(p/q) = √(pq)/q
+  let a = 1, m = N;
+  for (let k = Math.floor(Math.sqrt(N)); k > 1; k--) if (N % (k * k) === 0) { a = k; m = N / (k * k); break; }
+  const g = gcd(a, q), num = a / g, den = q / g;
+  const sign = val < 0 ? '-' : '';
+  const text = m === 1 ? `${sign}${num}/${den}` : `${sign}${num === 1 ? '' : num + '*'}sqrt(${m})${den === 1 ? '' : '/' + den}`;
+  const res = plainExpr(text);
+  return res && res.text != null && res.cls !== 'err' ? res : null;
+}
+
 /* A bare two-argument log(x, base) call (this app's internal form for any
    \log the user types — base defaults to 10, see the 'log' case in
    latexToExpr) whose value ISN'T a clean number: nerdamer doesn't have a
@@ -3605,6 +3675,8 @@ function plainExpr(expr) {
           // complex-number paths (see trySimplifyInverseTrigComposition) — a
           // real, in-domain numeric argument like sin(arccos(0.5)) lands
           // HERE (a plain finite real number), not in either of those.
+          const rad = tryCombinedRadical(expr, val);
+          if (rad) return rad;
           const trigComp = trySimplifyInverseTrigComposition(expr.trim());
           const exact = tryExactForm(trigComp || expr, val);
           if (exact) return exact;
@@ -3644,6 +3716,23 @@ function plainExpr(expr) {
         return { tex: complexTeX(val), text: fmtMath(val), cls: 'num' };
       }
       if (typeof val === 'number' && !isFinite(val)) {
+        // 171! and up overflow a double (→ Infinity) but are perfectly finite
+        // integers — the exact BigInt path handles them (up to 10000!).
+        const big = exactBigExpr(expr.trim());
+        if (big) {
+          if (!decimalMode) {
+            const neg = big.n < 0n, nn = (neg ? -big.n : big.n).toString();
+            return big.d === 1n
+              ? { tex: (neg ? '-' : '') + nn, text: (neg ? '-' : '') + nn, cls: 'num', raw: nn }
+              : { tex: `${neg ? '-' : ''}\\frac{${nn}}{${big.d}}`, text: `${neg ? '-' : ''}${nn}/${big.d}`, cls: 'num' };
+          }
+          if (big.d === 1n) {          // too big for a double: scientific notation
+            const digits = (big.n < 0n ? -big.n : big.n).toString();
+            if (digits.length <= 15) return { tex: big.n.toString(), text: big.n.toString(), cls: 'num' };
+            const sci = `${big.n < 0n ? '-' : ''}${digits[0]}.${digits.slice(1, 10)}e+${digits.length - 1}`;
+            return { tex: sci.replace(/e\+(\d+)/, '\\times 10^{$1}'), text: sci, cls: 'num' };
+          }
+        }
         if (Number.isNaN(val) || expr.includes('/')) return { text: 'That’s undefined — probably dividing by zero.', cls: 'err' };
         if (/\blog\(/.test(expr)) return { text: 'That’s undefined — log of 0 has no value (it dives toward −∞).', cls: 'err' };
         // A genuinely unbounded result (∞+1, ∞*2, ∞ on its own) — this is a real
