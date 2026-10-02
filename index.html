@@ -3921,12 +3921,18 @@ function evalProd(latex) {
 
 function evalLimit(latex) {
   const HELP = 'Type a limit like lim as x→0, then the expression to approach it with.';
-  const m = latex.match(/\\lim_\{([a-zA-Z]|\\[a-zA-Z]+)\\to\s*(-)?(\\infty|[^}]*)\}/);
+  // The subscript is read with brace DEPTH tracking: a target like \frac{\pi}{2}
+  // has braces of its own, and a plain [^}]* stopped at the first one.
+  const lm = latex.match(/\\lim_\{/);
+  if (!lm) return { text: HELP, cls: 'err' };
+  let depth = 0, close = lm.index + 5;
+  for (; close < latex.length; close++) { if (latex[close] === '{') depth++; else if (latex[close] === '}' && --depth === 0) break; }
+  const m = latex.slice(lm.index + 6, close).match(/^([a-zA-Z]|\\[a-zA-Z]+)\\to\s*(-)?([\s\S]*)$/);
   if (!m) return { text: HELP, cls: 'err' };
   const v = aliasVar(greekName(m[1]), complexMode);
   const neg = !!m[2];
-  const targetLatex = m[3];
-  const rest = latex.slice(m.index + m[0].length);
+  const targetLatex = m[3].trim();
+  const rest = latex.slice(close + 1);
   const body = stripOuter(latexToExpr(rest, complexMode));
   if (!body) return { text: 'Type an expression after the limit to evaluate it.', cls: 'err' };
 
@@ -3981,9 +3987,25 @@ function evalLimit(latex) {
 
   if (!isFinite(point)) {                    // x → ±∞
     const dir = point > 0 ? 1 : -1;
-    const [a, b, c] = [1e4, 1e6, 1e8].map(mag => f(dir * mag));
-    if ([a, b, c].every(isFinite) && Math.abs(c - b) < 1e-6 * Math.max(1, Math.abs(c)))
-      return numResult(c);
+    const [a, b, c, c4] = [1e4, 1e6, 1e8, 1e10].map(mag => f(dir * mag));
+    // Converging: each 100× step shrinks the change by far more than 5×. The
+    // old fixed 1e-6 cut-off rejected slow-but-real limits — ln(x)/x and
+    // (1+2/x)^x are still ~1e-5 apart at x=1e6. The error of such limits falls
+    // like 1/x, so 100× further out it is 100× smaller: extrapolate that last bit.
+    if ([a, b, c, c4].every(isFinite) && Math.abs(c - b) <= 0.2 * Math.abs(b - a) + 1e-12 &&
+        Math.abs(c4 - c) <= 0.2 * Math.abs(c - b) + 1e-9 && Math.abs(c - b) < 1e-3 * Math.max(1, Math.abs(c))) {
+      const est = c + (c - b) / 99;
+      // the classic constants a limit at infinity lands on — exact form in Exact
+      // mode, and in Decimal mode the constant's true digits (the sampled value
+      // itself carries ~1e-8 of round-off at these magnitudes)
+      const KNOWN = [['e', Math.E], ['e^2', Math.E ** 2], ['e^3', Math.E ** 3], ['e^(-1)', 1 / Math.E], ['e^(-2)', Math.E ** -2], ['pi', Math.PI], ['pi/2', Math.PI / 2], ['sqrt(2)', Math.SQRT2], ['sqrt(3)', Math.sqrt(3)]];
+      for (const [txt, k] of KNOWN) {
+        if (Math.abs(est - k) >= 1e-6 * Math.abs(k)) continue;
+        if (decimalMode) return numResult(k);
+        const r = plainExpr(txt); if (r && r.text != null && r.cls !== 'err') return r;
+      }
+      return numResult(est);
+    }
     if ([a, b, c].every(isFinite) && Math.abs(c) > Math.abs(b) && Math.abs(b) > Math.abs(a) && Math.abs(c) > 1e6)
       return { text: `The limit diverges to ${Math.sign(c) > 0 ? '+∞' : '−∞'}.`, cls: 'sym' };
     if (undefinedRef) return undefinedMsg();
