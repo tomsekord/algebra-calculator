@@ -3402,7 +3402,7 @@ function tryExactForm(expr, val) {
    (combinations/permutations). Returns {n, d} (reduced BigInt fraction) or
    null for anything else — it is a fallback, never a replacement. */
 function exactBigExpr(expr) {
-  if (!/^[\d\s+\-*/^().,!a-z]+$/.test(expr) || !/factorial|combinations|permutations|!/.test(expr)) return null;
+  if (!/^[\d\s+\-*/^().,!a-z]+$/.test(expr) || !/factorial|combinations|permutations|!|\^/.test(expr)) return null;
   const toks = expr.match(/\d+|factorial|combinations|permutations|[+\-*/^(),!]/g);
   if (!toks || toks.join('').length !== expr.replace(/\s+/g, '').length) return null;
   const gcd = (a, b) => { a = a < 0n ? -a : a; b = b < 0n ? -b : b; while (b) [a, b] = [b, a % b]; return a; };
@@ -3757,6 +3757,12 @@ function plainExpr(expr) {
             return { tex: sci.replace(/e\+(\d+)/, '\\times 10^{$1}'), text: sci, cls: 'num' };
           }
         }
+        // a power tower like 9^(9^9) is a finite integer with hundreds of millions
+        // of digits — "grows without bound" would be the wrong thing to say
+        if (val === Infinity && /\^/.test(expr) && /^[\d\s+\-*/^().]+$/.test(expr))
+          return { text: 'That number is far too large for me to calculate or display.', cls: null };
+        if (Number.isNaN(val) && /Infinity/.test(expr))
+          return { text: 'That’s undefined — an indeterminate form like ∞−∞ or ∞·0 has no single value.', cls: 'err' };
         if (Number.isNaN(val) || expr.includes('/')) return { text: 'That’s undefined — probably dividing by zero.', cls: 'err' };
         if (/\blog\(/.test(expr)) return { text: 'That’s undefined — log of 0 has no value (it dives toward −∞).', cls: 'err' };
         // A genuinely unbounded result (∞+1, ∞*2, ∞ on its own) — this is a real
@@ -4528,8 +4534,30 @@ function newton(f, x0, it = 80) {
 /* ============================================================
    LaTeX  →  evaluable expression
 ============================================================ */
+/* "1,000" or "12,345,678" typed with thousands separators: at the TOP level of
+   a line a comma means nothing else (it used to turn 1,000 into the two-item
+   list [1, 0]), so digit groups of the form 1-3 digits + (",ddd")+ are joined.
+   Commas inside any brackets are untouched — gcd(12,180) must stay two
+   arguments even though ",180" looks like a thousands group. */
+function stripThousandsCommas(tex) {
+  if (!tex.includes(',')) return tex;
+  let out = '', depth = 0;
+  for (let i = 0; i < tex.length;) {
+    const c = tex[i];
+    if ('({['.includes(c)) depth++;
+    else if (')}]'.includes(c)) depth--;
+    if (depth === 0 && /\d/.test(c) && !/[\d.]/.test(tex[i - 1] || '')) {
+      const m = tex.slice(i).match(/^\d{1,3}(?:,\d{3})+(?![\d,])/);
+      if (m) { out += m[0].replace(/,/g, ''); i += m[0].length; continue; }
+    }
+    out += c; i++;
+  }
+  return out;
+}
+
 function latexToExpr(tex, complex) {
   if (!tex) return '';
+  tex = stripThousandsCommas(tex);
   let s = tex
     .replace(/\\left\|/g, '\\abs{').replace(/\\right\|/g, '}')
     .replace(/\\left\[/g, '(').replace(/\\right\]/g, ')')
@@ -4952,7 +4980,8 @@ function fmtNumTeX(x) {
   if (Math.abs(x - r) < 1e-10) return String(r);
   if (!decimalMode)
     for (let d = 2; d <= 1000; d++) { const n = Math.round(x*d); if (n !== 0 && Math.abs(n/d - x) < 1e-9 && Math.abs(n) <= d*25) return `\\frac{${n}}{${d}}`; }
-  return parseFloat(x.toPrecision(10)).toString();
+  // JS spells very small/large numbers 1e-8 / 1e+21 — typeset those as 1×10^-8
+  return parseFloat(x.toPrecision(10)).toString().replace(/^(-?[\d.]+)e([+-]?)(\d+)$/, (m, a, s, e) => `${a}\\times 10^{${s === '-' ? '-' : ''}${e}}`);
 }
 function complexTeX(v) {
   // Same floating-point-noise tolerance the real part gets below, rather than
