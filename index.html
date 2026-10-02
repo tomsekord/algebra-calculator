@@ -162,6 +162,9 @@
        error box. Reserving space here keeps the × on the error's own row. */
     .lresult.err { color:var(--red); font-size:.78rem; max-width:calc(100% - 36px); }
     .lresult .katex { font-size:1.05rem; }
+    /* long integers: plain text, wrapped anywhere (see renderResult) */
+    .bignum { word-break:break-all; overflow-wrap:anywhere; white-space:normal; font-size:.85rem; line-height:1.35;
+              max-width:100%; text-align:right; }
 
     .ldel {
       background:none; border:none; cursor:pointer; color:transparent;
@@ -2005,6 +2008,7 @@ function renderVarsPanel() {
 
 function katexOrTextSpan(item) {
   const span = document.createElement('span');
+  if (/^-?\d{20,}$/.test(item.tex || '')) { span.className = 'bignum'; span.textContent = item.tex; return span; }   // see renderResult
   if (item.tex) {
     try { span.innerHTML = katex.renderToString(item.tex, { throwOnError: false }); return span; }
     catch {}
@@ -2028,6 +2032,17 @@ function renderResult(el, out) {
       catch { row.textContent = p; }
       el.appendChild(row);
     });
+    return;
+  }
+  // A very long integer (171! has 310 digits) rendered by KaTeX is ONE
+  // unbreakable box: right-aligned it ran off the left edge, hiding the
+  // leading digits. Plain text can wrap anywhere, so the whole number shows.
+  if (/^-?\d{20,}$/.test(out.tex || '')) {
+    el.innerHTML = '';
+    const big = document.createElement('span');
+    big.className = 'bignum';
+    big.textContent = out.tex;
+    el.appendChild(big);
     return;
   }
   if (out.tex && out.cls !== 'err') {
@@ -2343,18 +2358,48 @@ function assign(name, rhs) {
     return { parts: [a.tex || a.text, b.tex || b.text], text: `${a.text}   or   ${b.text}`, cls: 'num' };
   }
   try {
-    const val = math.evaluate(rhs, numScope);
+    // preferRealOddRoot: the cube root of -8 is -2 in Real mode (plainExpr
+    // already evaluates it this way; here it came back complex and errored)
+    const val = math.evaluate(preferRealOddRoot(rhs), numScope);
+    // 1/0, tan(π/2), ∞−∞ ... : the same "that's undefined" answer a bare
+    // expression gets, and nothing is assigned (it used to store Infinity, or
+    // the float noise 16331239353195370, as the variable's value)
+    // (mod(5,0) is a finite 5 to mathjs, so it needs asking about explicitly)
+    if (typeof val === 'number' && (!isFinite(val) || Math.abs(val) > 1e10 || /\bmod\(/.test(rhs))) {
+      const pr = plainExpr(rhs);
+      if (pr && pr.text != null && (pr.cls === 'err' || /^That’s (undefined|infinite)|^That number is far/.test(pr.text))) return pr;
+    }
     if (typeof val === 'number' && isFinite(val)) {
       numScope[name] = val; varNames.add(name);
       // Exact mode: "y = sqrt(3)" should show (and remember, in the sidebar
       // and in nerdamer's symbol table) √3, not 1.732… — same helper and
       // reasoning as plainExpr. numScope still gets the numeric value so
       // other lines can compute with it either way.
-      const exact = decimalMode ? null : tryExactForm(rhs, val);
-      try { nerdamer.setVar(name, exact ? exact.raw : String(val)); } catch {}
+      // The display goes through plainExpr — the SAME exact pipeline a bare
+      // expression gets (exact BigInt integers, combined radicals, log(7) left
+      // symbolic, special-angle trig, φ ...). tryExactForm alone is only one
+      // stage of it: "x = 2^100" lost digits to a float, "x = 25!" echoed "25!",
+      // and "x = log(7)" became 431/510.
+      let exact = null;
+      if (!decimalMode) {
+        const r = plainExpr(rhs);
+        if (r && r.text != null && !r.parts && (r.cls === 'num' || r.cls === 'sym')) exact = r;
+      }
+      const rawOf = e => e.raw || (/^-?\d+(\/\d+)?$/.test(e.text) ? e.text : String(val));
+      try { nerdamer.setVar(name, exact ? rawOf(exact) : String(val)); } catch {}
       if (exact) { knownVars.set(name, { text: exact.text, tex: exact.tex }); return exact; }
       knownVars.set(name, { text: fmtNum(val), tex: fmtNumTeX(val) });
       return { tex: fmtNumTeX(val), text: fmtNum(val), cls: 'num' };
+    }
+    // A float overflow (171!/170! is Infinity as doubles) can still have an exact
+    // answer — show that instead of "Infinity".
+    if (typeof val === 'number' && !isFinite(val)) {
+      const r = plainExpr(rhs);
+      if (r && r.text != null && r.cls !== 'err' && !/∞|infinite/.test(r.text)) {
+        numScope[name] = val; varNames.add(name);
+        knownVars.set(name, { text: r.text, tex: r.tex });
+        return r;
+      }
     }
     if (val && val.isComplex) {
       if (!complexMode && Math.abs(val.im) > 1e-12)
