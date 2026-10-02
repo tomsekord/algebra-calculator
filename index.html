@@ -913,7 +913,7 @@ function makeMQConfig() {
     // instead sidesteps both problems — it's the only way to get "inf" to trigger
     // anything by typing — and parseCommand below treats \inf as infinity, same
     // as \infty (this calculator has no notion of infimum to conflict with).
-    autoOperatorNames: 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh ln log exp abs sign floor ceil round gcd lcm mod det factor expand simplify factorial lim nCr nPr taylor inf',
+    autoOperatorNames: 'sin cos tan sec csc cot arcsin arccos arctan sinh cosh tanh ln log exp abs sign floor ceil round gcd lcm mod det factor expand simplify factorial conj lim nCr nPr taylor inf',
     handlers: {
       edit: mq => { autoArrow(mq); onFocusField(mq); recordHistory(); scheduleEval(); },
       enter: mq => enterFrom(mq),
@@ -3623,7 +3623,23 @@ function plainExpr(expr) {
           // throwing, so it never reaches that other path at all.
           const trigComp = trySimplifyInverseTrigComposition(expr.trim());
           const exact = tryExactForm(trigComp || expr, val);
-          if (exact) return exact;
+          // nerdamer has no way to evaluate ln(-1), sin(i), √i ... so "exact"
+          // there is just the input echoed back. When the value is a genuine
+          // complex number, a computed answer beats an echo.
+          const echoed = exact && /\b(log|sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sqrt)\(/.test(exact.text);
+          // ln of a negative number is a bare multiple of πi: ln(-1) = πi
+          if (echoed && Math.abs(val.re) < 1e-10) {
+            const k = val.im / Math.PI;
+            for (let q = 1; q <= 12; q++) {
+              const p = Math.round(k * q);
+              if (p !== 0 && Math.abs(p / q - k) < 1e-9) {
+                const r = plainExpr(`(${p}*pi/${q})*i`);
+                if (r && r.text != null && r.cls !== 'err') return r;
+                break;
+              }
+            }
+          }
+          if (exact && !echoed) return exact;
         }
         return { tex: complexTeX(val), text: fmtMath(val), cls: 'num' };
       }
@@ -4525,8 +4541,9 @@ function latexToExpr(tex, complex) {
         return fnWithPower(name, name);
       case 'sign': case 'floor': case 'ceil': case 'round':
       case 'gcd': case 'lcm': case 'mod': case 'det': case 'factorial':
-      case 'factor': case 'expand': case 'simplify':
+      case 'factor': case 'expand': case 'simplify': case 'conj':
         return name + parseArg();
+      case 'overline': return 'conj' + parseArg();   // a bar over z is its complex conjugate
       // math.js/nerdamer only know the "a-" spelling (asin, not arcsin) —
       // without this remap, "\arcsin(1)" reaches math.evaluate as a
       // function name it's never heard of and just echoes back unevaluated.
@@ -4791,6 +4808,11 @@ function disp(str) {
     const isDigit = ch => ch >= '0' && ch <= '9';
     return (isDigit(full[p] || '') && isDigit(full[q] || '')) ? ' \\cdot ' : '';
   });
+  // Must come AFTER the \cdot removal above, which also swallows the space in
+  // "\pi \cdot x" and left "\pix" — not a TeX command, so KaTeX printed it as
+  // red literal text (π·x, πi). A space is what ends a command name.
+  // (same for every Greek letter: "2\theta x" would print as "\thetax")
+  s = s.replace(/(\\(?:pi|phi|varphi|theta|vartheta|alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|iota|kappa|lambda|mu|nu|xi|rho|sigma|tau|chi|psi|omega))(?=[a-zA-Z])/g, '$1 ');
   return s;
 }
 
